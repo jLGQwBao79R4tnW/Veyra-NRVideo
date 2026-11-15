@@ -1,0 +1,345 @@
+diff --git a/dlls/nvcuda/d3dkmt_fd.c b/dlls/nvcuda/d3dkmt_fd.c
+new file mode 100644
+index 0000000..a14b106
+--- /dev/null
++++ b/dlls/nvcuda/d3dkmt_fd.c
+@@ -0,0 +1,244 @@
++/*
++ * Wine 11 / Proton 11 D3DKMT shared handle -> host fd
++ *
++ * Proton 11 no longer ships sharedgpures.sys. D3D12 shared resources and
++ * fences (vkd3d-proton -> winevulkan/win32u) are wineserver "d3dkmt" objects
++ * that carry the host Vulkan OPAQUE_FD. The NT handle an application gets is
++ * a dxgk_shared_resource/dxgk_shared_sync object without get_fd, so the fd is
++ * reached the way win32u does it: d3dkmt_object_open(type, 0, nt_handle)
++ * returns a server handle to the d3dkmt object, then wine_server_handle_to_fd.
++ *
++ * The request number of d3dkmt_object_open differs between Proton builds
++ * (304 in Proton Experimental 11, 306 in GE-Proton11-3), so it is resolved at
++ * runtime from the running wineserver binary's symbols (req_handlers table).
++ */
++
++#define _GNU_SOURCE
++#include "config.h"
++#include <dlfcn.h>
++#include <elf.h>
++#include <fcntl.h>
++#include <stdarg.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <unistd.h>
++#include <sys/mman.h>
++#include <sys/stat.h>
++#include <pthread.h>
++
++#include "windef.h"
++#include "winbase.h"
++#include "winternl.h"
++#include "ntstatus.h"
++#include "wine/debug.h"
++#include "wine/server.h"
++#include "nvcuda.h"
++
++WINE_DEFAULT_DEBUG_CHANNEL(nvcuda);
++
++/* Layout of d3dkmt_object_open in Proton 11 server_protocol.h (stable fields). */
++struct nv_d3dkmt_object_open_request
++{
++    struct request_header __header;
++    unsigned int  type;
++    unsigned int  global;
++    obj_handle_t  handle;
++};
++struct nv_d3dkmt_object_open_reply
++{
++    struct reply_header __header;
++    unsigned int  global;
++    obj_handle_t  handle;
++    data_size_t   runtime_size;
++    char __pad_20[4];
++};
++
++static int req_d3dkmt_object_open = -1;
++static pthread_once_t req_once = PTHREAD_ONCE_INIT;
++
++static const char *find_wineserver(char *buf, size_t size)
++{
++    const char *env = getenv("WINESERVER");
++    char line[4096];
++    FILE *maps;
++
++    if (env && !access(env, R_OK)) return env;
++    /* <dist>/lib/wine/x86_64-unix/ntdll.so (from /proc/self/maps) -> <dist>/bin/wineserver */
++    if (!(maps = fopen("/proc/self/maps", "r"))) return NULL;
++    while (fgets(line, sizeof(line), maps))
++    {
++        char *path = strchr(line, '/'), *p;
++        if (!path || !strstr(path, "-unix/ntdll.so")) continue;
++        path[strcspn(path, "\n")] = 0;
++        snprintf(buf, size, "%s", path);
++        if ((p = strstr(buf, "/lib/wine/")) || (p = strstr(buf, "/lib64/wine/")))
++        {
++            snprintf(p, size - (p - buf), "/bin/wineserver");
++            if (!access(buf, R_OK)) { fclose(maps); return buf; }
++        }
++    }
++    fclose(maps);
++    return NULL;
++}
++
++/* index of req_d3dkmt_object_open inside req_handlers, from symtab + RELA */
++static void resolve_request_number(void)
++{
++    char path[4096];
++    const char *file = find_wineserver(path, sizeof(path));
++    const Elf64_Ehdr *eh;
++    const Elf64_Shdr *sh;
++    Elf64_Addr handlers = 0, target = 0;
++    Elf64_Xword handlers_size = 0;
++    struct stat st;
++    void *map;
++    int fd, i;
++
++    if (!file || (fd = open(file, O_RDONLY)) < 0) { ERR("wineserver binary not found\n"); return; }
++    if (fstat(fd, &st) || (map = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0)) == MAP_FAILED)
++    { close(fd); return; }
++    close(fd);
++
++    eh = map;
++    if (memcmp(eh->e_ident, ELFMAG, SELFMAG) || eh->e_ident[EI_CLASS] != ELFCLASS64) goto done;
++    sh = (const Elf64_Shdr *)((const char *)map + eh->e_shoff);
++
++    for (i = 0; i < eh->e_shnum; i++)
++    {
++        const Elf64_Sym *sym; const char *str; size_t n, j;
++        if (sh[i].sh_type != SHT_SYMTAB) continue;
++        sym = (const Elf64_Sym *)((const char *)map + sh[i].sh_offset);
++        str = (const char *)map + sh[sh[i].sh_link].sh_offset;
++        n = sh[i].sh_size / sizeof(*sym);
++        for (j = 0; j < n; j++)
++        {
++            const char *name = str + sym[j].st_name;
++            if (!strcmp(name, "req_handlers")) { handlers = sym[j].st_value; handlers_size = sym[j].st_size; }
++            else if (!strcmp(name, "req_d3dkmt_object_open")) target = sym[j].st_value;
++        }
++    }
++    if (!handlers || !target) { ERR("wineserver has no req_handlers/req_d3dkmt_object_open symbols\n"); goto done; }
++
++    for (i = 0; i < eh->e_shnum && req_d3dkmt_object_open < 0; i++)
++    {
++        const Elf64_Rela *rel; size_t n, j;
++        if (sh[i].sh_type != SHT_RELA) continue;
++        rel = (const Elf64_Rela *)((const char *)map + sh[i].sh_offset);
++        n = sh[i].sh_size / sizeof(*rel);
++        for (j = 0; j < n; j++)
++            if (rel[j].r_offset >= handlers && rel[j].r_offset < handlers + handlers_size &&
++                (Elf64_Addr)rel[j].r_addend == target)
++            {
++                req_d3dkmt_object_open = (rel[j].r_offset - handlers) / sizeof(void *);
++                break;
++            }
++    }
++    TRACE("%s: d3dkmt_object_open = request %d\n", file, req_d3dkmt_object_open);
++done:
++    munmap(map, st.st_size);
++}
++
++/* gdi32 D3DKMTOpenNtHandleFromName / D3DKMTOpenSyncObjectNtHandleFromName parameter block */
++struct nv_open_nt_handle_from_name
++{
++    DWORD dwDesiredAccess;
++    OBJECT_ATTRIBUTES *pObjAttrib;
++    HANDLE hNtHandle;
++};
++
++/* named shared object -> NT handle, as win32u open_shared_resource_from_name() does */
++static HANDLE open_shared_name(const WCHAR *name, BOOL sync)
++{
++    NTSTATUS (WINAPI *popen)(struct nv_open_nt_handle_from_name *);
++    struct nv_open_nt_handle_from_name params = {0};
++    WCHAR buffer[MAX_PATH * 2];
++    UNICODE_STRING str;
++    OBJECT_ATTRIBUTES attr;
++    HMODULE gdi32 = LoadLibraryA("gdi32.dll");
++    NTSTATUS status;
++    int len;
++
++    popen = (void *)GetProcAddress(gdi32, sync ? "D3DKMTOpenSyncObjectNtHandleFromName" : "D3DKMTOpenNtHandleFromName");
++    if (!popen) { ERR("gdi32 lacks D3DKMT name open\n"); return NULL; }
++
++    /* "\\Sessions\\<id>\\BaseNamedObjects\\<name>", built by hand (WCHAR is 16-bit here) */
++    {
++        char prefix[64];
++        int i, n = snprintf(prefix, sizeof(prefix), "\\Sessions\\%u\\BaseNamedObjects\\",
++                            (unsigned)NtCurrentTeb()->Peb->SessionId);
++        for (i = 0; i < n; i++) buffer[i] = prefix[i];
++        for (len = n; name[len - n] && len < ARRAY_SIZE(buffer) - 1; len++) buffer[len] = name[len - n];
++        buffer[len] = 0;
++    }
++    str.Buffer = buffer;
++    str.Length = len * sizeof(WCHAR);
++    str.MaximumLength = str.Length + sizeof(WCHAR);
++    InitializeObjectAttributes(&attr, &str, OBJ_OPENIF, NULL, NULL);
++    params.dwDesiredAccess = GENERIC_ALL;
++    params.pObjAttrib = &attr;
++    if ((status = popen(&params)))
++    {
++        ERR("open %s failed, status %#x\n", debugstr_w(buffer), (unsigned)status);
++        return NULL;
++    }
++    TRACE("%s -> %p\n", debugstr_w(buffer), params.hNtHandle);
++    return params.hNtHandle;
++}
++
++/* type: 6 = D3DKMT_RESOURCE, 5 = D3DKMT_SYNC (enum d3dkmt_type) */
++int d3dkmt_shared_to_fd(HANDLE nt_handle, const WCHAR *name, unsigned int type)
++{
++    HANDLE opened = NULL;
++    int fd;
++
++    if (!nt_handle && name && !(nt_handle = opened = open_shared_name(name, type == 5))) return -1;
++    fd = d3dkmt_shared_handle_to_fd(nt_handle, type);
++    if (opened) NtClose(opened);
++    return fd;
++}
++
++int d3dkmt_shared_handle_to_fd(HANDLE nt_handle, unsigned int type)
++{
++    struct __server_request_info info;
++    struct nv_d3dkmt_object_open_request *req;
++    struct nv_d3dkmt_object_open_reply *reply;
++    NTSTATUS status;
++    HANDLE object;
++    int fd = -1;
++
++    /* Wine with MR !12339 (server get_fd on shared resources/syncs): direct path */
++    if (!wine_server_handle_to_fd(nt_handle, GENERIC_ALL, &fd, NULL) && fd >= 0)
++    {
++        TRACE("%p (type %u) -> fd %d (direct)\n", nt_handle, type, fd);
++        return fd;
++    }
++    fd = -1;
++
++    pthread_once(&req_once, resolve_request_number);
++    if (req_d3dkmt_object_open < 0) return -1;
++
++    memset(&info, 0, sizeof(info));
++    req = (struct nv_d3dkmt_object_open_request *)&info.u.req;
++    reply = (struct nv_d3dkmt_object_open_reply *)&info.u.reply;
++    req->__header.req = (enum request)req_d3dkmt_object_open;
++    req->type = type;
++    req->global = 0;
++    req->handle = wine_server_obj_handle(nt_handle);
++
++    if ((status = wine_server_call(&info)))
++    {
++        ERR("d3dkmt_object_open(%p, type %u) failed, status %#x\n", nt_handle, type, (unsigned)status);
++        return -1;
++    }
++    object = wine_server_ptr_handle(reply->handle);
++    status = wine_server_handle_to_fd(object, GENERIC_ALL, &fd, NULL);
++    NtClose(object);
++    if (status || fd < 0)
++    {
++        ERR("no host fd for %p (type %u), status %#x\n", nt_handle, type, (unsigned)status);
++        return -1;
++    }
++    TRACE("%p (type %u) -> fd %d\n", nt_handle, type, fd);
++    return fd;
++}
+diff --git a/dlls/nvcuda/meson.build b/dlls/nvcuda/meson.build
+index b220913..ca25aff 100644
+--- a/dlls/nvcuda/meson.build
++++ b/dlls/nvcuda/meson.build
+@@ -3,6 +3,7 @@ nvcuda_src = [
+   'nvcuda.c',
+   'function_mappings.c',
+   'encryption.c',
++  'd3dkmt_fd.c',
+ ]
+ 
+ thread_dep = dependency('threads')
+diff --git a/dlls/nvcuda/nvcuda.c b/dlls/nvcuda/nvcuda.c
+index ce21d18..8598599 100644
+--- a/dlls/nvcuda/nvcuda.c
++++ b/dlls/nvcuda/nvcuda.c
+@@ -4114,8 +4114,15 @@ CUresult WINAPI wine_cuLaunchHostFunc_ptsz(CUstream hStream, CUhostFn fn, void *
+ 
+ CUresult WINAPI wine_cuImportExternalMemory(void *extMem_out, const CUDA_EXTERNAL_MEMORY_HANDLE_DESC *memHandleDesc)
+ {
+-    TRACE("(%p, %p)\n", extMem_out, memHandleDesc);
++    TRACE("(%p, %p) type %d handle %p name %s size %#llx flags %#x\n", extMem_out, memHandleDesc, memHandleDesc->type,
++          memHandleDesc->handle.win32.handle, debugstr_w((const WCHAR *)memHandleDesc->handle.win32.name), (unsigned long long)memHandleDesc->size, memHandleDesc->flags);
+ 
++    if (TRACE_ON(nvcuda))
++    {
++        const unsigned int *w = (const unsigned int *)memHandleDesc;
++        TRACE("raw desc: %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x\n",
++              w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7], w[8], w[9]);
++    }
+     CUDA_EXTERNAL_MEMORY_HANDLE_DESC linuxHandleDesc = *memHandleDesc;
+     HANDLE handle;
+ 
+@@ -4123,19 +4130,31 @@ CUresult WINAPI wine_cuImportExternalMemory(void *extMem_out, const CUDA_EXTERNA
+     switch (linuxHandleDesc.type)
+     {
+         case CU_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32:
+-            linuxHandleDesc.handle.fd = get_shared_resource_fd(linuxHandleDesc.handle.win32.handle);
++        case CU_EXTERNAL_MEMORY_HANDLE_TYPE_D3D12_HEAP:
++        case CU_EXTERNAL_MEMORY_HANDLE_TYPE_D3D12_RESOURCE:
++        case CU_EXTERNAL_MEMORY_HANDLE_TYPE_D3D11_RESOURCE:
++            /* Wine 11: D3DKMT shared object (6 = D3DKMT_RESOURCE); Wine <= 10: sharedgpures ioctl */
++            linuxHandleDesc.handle.fd = d3dkmt_shared_to_fd(memHandleDesc->handle.win32.handle, (const WCHAR *)memHandleDesc->handle.win32.name, 6);
++            if (linuxHandleDesc.handle.fd < 0 && memHandleDesc->handle.win32.handle)
++                linuxHandleDesc.handle.fd = get_shared_resource_fd(memHandleDesc->handle.win32.handle);
++            /* D3D12 committed resources are dedicated Vulkan allocations in vkd3d-proton */
++            if (memHandleDesc->type == CU_EXTERNAL_MEMORY_HANDLE_TYPE_D3D12_RESOURCE ||
++                memHandleDesc->type == CU_EXTERNAL_MEMORY_HANDLE_TYPE_D3D11_RESOURCE)
++                linuxHandleDesc.flags |= CUDA_EXTERNAL_MEMORY_DEDICATED;
+             linuxHandleDesc.type = CU_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD;
+             break;
+         case CU_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_KMT:
+             handle = get_shared_resource_kmt_handle(linuxHandleDesc.handle.win32.handle);
+             linuxHandleDesc.handle.fd = get_shared_resource_fd(handle);
+             linuxHandleDesc.type = CU_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD;
++            break;
+         default:
+             break;
+     }
+ 
+     CUresult ret = pcuImportExternalMemory(extMem_out, &linuxHandleDesc);
+-    if(ret) ERR("Returned error: %d\n", ret);
++    if(ret) ERR("Returned error: %d (type %d -> %d, fd %d, size %#llx, flags %#x)\n", ret, memHandleDesc->type,
++                linuxHandleDesc.type, linuxHandleDesc.handle.fd, (unsigned long long)linuxHandleDesc.size, linuxHandleDesc.flags);
+     return ret;
+ }
+ 
+@@ -4195,7 +4214,11 @@ CUresult WINAPI wine_cuImportExternalSemaphore(CUexternalSemaphore *extSem_out,
+             linuxHandleDesc.type = CU_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD;
+             break;
+         case CU_EXTERNAL_SEMAPHORE_HANDLE_TYPE_TIMELINE_SEMAPHORE_WIN32:
+-            linuxHandleDesc.handle.fd = get_shared_resource_fd(linuxHandleDesc.handle.win32.handle);
++        case CU_EXTERNAL_SEMAPHORE_HANDLE_TYPE_D3D12_FENCE:
++            /* D3D12 fences are Vulkan timeline semaphores; Wine 11 keeps their fd in a D3DKMT sync object (5) */
++            linuxHandleDesc.handle.fd = d3dkmt_shared_to_fd(semHandleDesc->handle.win32.handle, (const WCHAR *)semHandleDesc->handle.win32.name, 5);
++            if (linuxHandleDesc.handle.fd < 0 && semHandleDesc->handle.win32.handle)
++                linuxHandleDesc.handle.fd = get_shared_resource_fd(semHandleDesc->handle.win32.handle);
+             linuxHandleDesc.type = CU_EXTERNAL_SEMAPHORE_HANDLE_TYPE_TIMELINE_SEMAPHORE_FD;
+             break;
+         default:
+diff --git a/dlls/nvcuda/nvcuda.h b/dlls/nvcuda/nvcuda.h
+index fd24aca..51a8f5c 100644
+--- a/dlls/nvcuda/nvcuda.h
++++ b/dlls/nvcuda/nvcuda.h
+@@ -28,5 +28,10 @@ void __attribute((visibility("hidden"))) cuda_process_tls_callbacks(DWORD reason
+ CUresult __attribute((visibility("hidden"))) cuda_get_table(const void **table, const CUuuid *uuid, const void *orig_table, CUresult orig_result);
+ int __attribute((visibility("hidden"))) get_shared_resource_fd(HANDLE win32_handle);
+ HANDLE __attribute((visibility("hidden"))) get_shared_resource_kmt_handle(HANDLE shared_resource);
++#ifndef CUDA_EXTERNAL_MEMORY_DEDICATED
++#define CUDA_EXTERNAL_MEMORY_DEDICATED 0x1
++#endif
++int __attribute((visibility("hidden"))) d3dkmt_shared_handle_to_fd(HANDLE nt_handle, unsigned int type);
++int __attribute((visibility("hidden"))) d3dkmt_shared_to_fd(HANDLE nt_handle, const WCHAR *name, unsigned int type);
+ 
+ #endif
