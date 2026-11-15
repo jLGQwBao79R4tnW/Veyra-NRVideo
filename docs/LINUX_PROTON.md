@@ -137,8 +137,10 @@ install: the scripts keep fetching the same files, into their own folder.
 
 Two things are not pinned: the build container image (`fedora:44`, override
 with `VEYRA_VFG_IMAGE`) and the Wine headers and compilers it installs (Wine
-11.21 headers when tested). The built binaries can therefore differ slightly
-between machines even though the sources are identical.
+11.21 headers when tested). Two builds on the same machine gave a
+byte-identical `nvcuda.dll.so`; `d3d12core.dll` and `d3d12.dll` differed only
+in the PE build timestamps. A different container image or compiler version
+could change the binaries further even though the sources are identical.
 
 Moving to a newer GE-Proton means updating `versions.sh`, rebasing both
 patches onto the commits that build ships, and re-testing. The patches become
@@ -162,11 +164,11 @@ In Veyra choose "Frame Gen" → NVIDIA VFG → 2X.
 
 Behind a proxy, pass container options through `VEYRA_VFG_RUN_ARGS`.
 
-What has been run: download, checksum verification and unpacking of both
-packages; the version check; fetching both sources at the pinned commits and
-applying the patches; starting the container. The compile step inside the
-container was done by hand for the measurements above, with the same commands,
-but the script as a whole has not completed a build yet.
+The scripts were run from nothing on the test machine (inside a distrobox,
+docker on the host): setup took 66 s, the overlay build 162 s. NVIDIA VFG 2X
+then ran as with the hand-built components: 60 fps from 30, 1% low 47.9 fps,
+no CUDA errors. The whole install takes about 5.8 GB, of which 1.2 GB is the
+download cache and 0.4 GB the build tree; both can be deleted afterwards.
 
 GE-Proton may download an FSR4 upgrade library into the prefix on first run
 ("Automatic FSR4 upgrade"); that is GE-Proton's own behaviour.

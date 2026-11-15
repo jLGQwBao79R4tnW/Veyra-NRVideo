@@ -74,7 +74,7 @@ user_args=()
 "$engine" exec "${user_args[@]}" -w /work/nvcuda "$name" sh -c \
   'meson setup --cross-file build-wine64.txt --buildtype release build64 && ninja -C build64'
 "$engine" exec "${user_args[@]}" -w /work/vkd3d-proton "$name" sh -c \
-  'meson setup --cross-file build-win64.txt --buildtype release --strip -Denable_extras=false build64 && ninja -C build64'
+  'meson setup --cross-file build-win64.txt --buildtype release -Denable_extras=false build64 && ninja -C build64'
 
 # Symlink copy of our own pinned GE-Proton. The launcher script must be a real
 # file so that it resolves paths relative to the copy.
