@@ -43,22 +43,34 @@ has not been measured on Linux yet.
 
 ## Quick start
 
-Requirements: Steam with Proton Experimental installed, the proprietary NVIDIA
-driver, and the Veyra NVIDIA portable package extracted somewhere.
+Requirements: the proprietary NVIDIA driver, `curl`, `tar`, and `unzip` or
+`python3`. Nothing else has to be installed by hand.
 
 ```bash
-VEYRA_APP=/path/to/Veyra-2.1.6-NVIDIA-win64-portable scripts/linux/veyra-proton.sh
-# or open a file directly
-VEYRA_APP=/path/to/Veyra-2.1.6-NVIDIA-win64-portable scripts/linux/veyra-proton.sh ~/Videos/clip.mp4
+scripts/linux/veyra-proton.sh                    # open Veyra
+scripts/linux/veyra-proton.sh ~/Videos/clip.mp4  # open a file directly
+scripts/linux/veyra-proton.sh --setup            # only download and prepare
 ```
 
-The script uses its own prefix (`~/.local/share/veyra-proton/prefix`) and does
-not touch Steam game prefixes. `VEYRA_LOG=1` writes a Proton log next to the
-prefix. Veyra's own log is `logs/veyra-qml.log` inside the package folder.
+On first run the script downloads the pinned Veyra package and the pinned
+GE-Proton, verifies their checksums and unpacks them under
+`~/.local/share/veyra-proton` (`VEYRA_HOME`). It does not use or touch Steam's
+Proton installs or game prefixes, so Steam updates cannot change what runs,
+and every machine ends up with the same versions. About 1.2 GB is downloaded.
 
-In Veyra: Tab switches to Pro mode. Enable "Super resolution" → RTX Video
-Super Resolution, and "Frame Gen" → FSR 3.1 · 2X. Keep the motion source on
-"Zero motion".
+`VEYRA_LOG=1` writes a Proton log to `$VEYRA_HOME/logs`. Veyra's own log is
+`logs/veyra-qml.log` inside the package folder.
+
+A fresh install starts with super resolution and frame generation off; turn
+them on once and Veyra remembers. Tab switches to Pro mode. Enable "Super
+resolution" → RTX Video Super Resolution, and "Frame Gen" → FSR 3.1 · 2X. Keep
+the motion source on "Zero motion".
+
+The measurements in "What works" for the stock path were taken with Proton
+Experimental. The launcher uses the pinned GE-Proton11-3 instead, on which
+RTX Video SR and FSR frame generation were also confirmed; PS5 Remote Play
+has not been re-run on it. `VEYRA_PROTON` selects another Proton for
+comparison.
 
 ### NGX libraries
 
@@ -73,9 +85,10 @@ so the launcher copies them itself and searches the usual host and
 
 If the container's distribution differs from the host, the host Vulkan ICD
 file can point at a library path that does not exist in the container, and
-Vulkan then falls back to llvmpipe. Write an ICD JSON with the container's
-path to `libGLX_nvidia.so.0` and export `VK_DRIVER_FILES` before starting the
-launcher. Running directly on the host avoids this.
+Vulkan then falls back to llvmpipe. The launcher detects a container and
+writes its own ICD files that point at the container's `libGLX_nvidia.so.0`.
+Set `VK_DRIVER_FILES` yourself to override. Running directly on the host
+needs none of this.
 
 ## NVIDIA VFG
 
@@ -104,31 +117,58 @@ in two places, and both need a patched component:
    gives shared committed buffers a dedicated exportable allocation registered
    with D3DKMT (2 files, 64 lines).
 
-The patches apply to the exact commits shipped in GE-Proton11-3:
-SveSop/nvcuda `772b344` and HansKristian-Work/vkd3d-proton `3dfc6f07`.
+### Pinned versions
 
-Result with both patches, test clip 1080p30 → SR to 4K → VFG 2X, quality
-Medium, `compatibility=SM86-experimental`: 60 fps on screen from 30, 1% low
-47 fps, VFG about 8.3 ms average and 10.6 ms P95 per frame, no CUDA errors,
-no visible artifacts on the synthetic clip. Not yet measured: real content and
-a live PS5 stream.
+All versions live in `scripts/linux/versions.sh`. The scripts download exactly
+these and stop on a checksum or version mismatch:
 
-### Building the overlay
+| Component | Pinned to | Enforced by |
+|---|---|---|
+| Veyra | 2.1.6 NVIDIA win64 portable | SHA-256 of the release zip |
+| Proton | GE-Proton11-3 | SHA-512 of the release tarball |
+| nvcuda | SveSop/nvcuda `772b344a3594fca916999c5c5288d875332de482` (`v0.3-13-g772b344`) | full commit hash |
+| vkd3d-proton | HansKristian-Work/vkd3d-proton `3dfc6f07d0953b1e8b41705275c2c59cc7374fc5` (`vkd3d-1.1-5438-g3dfc6f07d`) | full commit hash |
+
+The two source commits are the ones GE-Proton11-3 itself bundles; the build
+script checks the bundled `version` files and stops if they differ.
+
+New upstream releases of any of these therefore do not change or break an
+install: the scripts keep fetching the same files, into their own folder.
+
+Two things are not pinned: the build container image (`fedora:44`, override
+with `VEYRA_VFG_IMAGE`) and the Wine headers and compilers it installs (Wine
+11.21 headers when tested). Two builds on the same machine gave a
+byte-identical `nvcuda.dll.so`; `d3d12core.dll` and `d3d12.dll` differed only
+in the PE build timestamps. A different container image or compiler version
+could change the binaries further even though the sources are identical.
+
+Moving to a newer GE-Proton means updating `versions.sh`, rebasing both
+patches onto the commits that build ships, and re-testing. The patches become
+unnecessary once vkd3d-proton supports shared committed buffers and Wine
+MR !12339 lands with an nvcuda release that uses it.
+
+### Running with NVIDIA VFG
 
 ```bash
-scripts/linux/build-vfg-proton.sh            # needs GE-Proton11-3, podman or docker, git
-VEYRA_PROTON="$HOME/.local/share/veyra-proton/vfg/GE-Proton-veyra-vfg/proton" \
-VEYRA_CUDA=1 VEYRA_PREFIX="$HOME/.local/share/veyra-proton/prefix-vfg" \
-VEYRA_APP=/path/to/Veyra-2.1.6-NVIDIA-win64-portable scripts/linux/veyra-proton.sh
+VEYRA_VFG=1 scripts/linux/veyra-proton.sh
 ```
 
-The script builds both components in a throw-away Fedora container and
-installs them into a symlink copy of GE-Proton; the original GE-Proton install
-is not modified. Use a separate prefix for it, because Proton does not replace
-`d3d12core.dll` in an existing prefix. PS5 pairing is stored per prefix.
+The first start builds the overlay (`build-vfg-proton.sh`, needs `git` and
+podman or docker): it builds both patched components in a throw-away Fedora
+container and installs them into a copy of the pinned GE-Proton at
+`$VEYRA_HOME/proton/GE-Proton11-3-veyra-vfg`. Later starts reuse it. This mode
+has its own prefix (`$VEYRA_HOME/prefix-vfg`), because Proton does not replace
+`d3d12core.dll` in an existing prefix; PS5 pairing is stored per prefix.
 
-`build-vfg-proton.sh` automates the commands that were run by hand for the
-measurements above. The script itself has not been run end to end yet.
+In Veyra choose "Frame Gen" → NVIDIA VFG → 2X.
+
+Behind a proxy, pass container options through `VEYRA_VFG_RUN_ARGS`.
+
+The scripts were run from nothing on the test machine (inside a distrobox,
+docker on the host): setup took 66 s, the overlay build 162 s. NVIDIA VFG 2X
+then ran as with the hand-built components: 60 fps from 30, 1% low 47.9 fps,
+no CUDA errors. The whole install takes about 5.8 GB, of which 1.2 GB is the
+download cache and 0.4 GB the build tree; both can be deleted afterwards.
 
 GE-Proton may download an FSR4 upgrade library into the prefix on first run
 ("Automatic FSR4 upgrade"); that is GE-Proton's own behaviour.

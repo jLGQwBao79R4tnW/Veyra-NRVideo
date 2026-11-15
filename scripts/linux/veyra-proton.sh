@@ -3,49 +3,94 @@
 #
 #   veyra-proton.sh                    open Veyra
 #   veyra-proton.sh ~/Videos/clip.mp4  open a video straight away
+#   veyra-proton.sh --setup            only download and prepare, do not start
+#
+# Nothing has to be installed by hand. On first run the script downloads the
+# pinned Veyra package and the pinned GE-Proton (versions.sh), verifies their
+# checksums and unpacks them under ~/.local/share/veyra-proton. Steam's own
+# Proton installs are neither used nor touched, so every machine runs the same
+# versions.
 #
 # Environment:
-#   VEYRA_APP     folder with veyra_qml_ui.exe (default: this script's ../.. or $PWD)
-#   VEYRA_PROTON  path to a Proton "proton" script (default: Proton Experimental from Steam)
-#   VEYRA_PREFIX  compat data directory (default: ~/.local/share/veyra-proton/prefix)
-#   VEYRA_CUDA=1  enable the nvidia-libs CUDA bridge (needed for NVIDIA VFG; needs a
-#                 Proton build that ships it, see docs/LINUX_PROTON.md)
-#   VEYRA_LOG=1   write a Proton log to $VEYRA_PREFIX/../logs
+#   VEYRA_VFG=1    use the Proton overlay with patched nvcuda and vkd3d-proton,
+#                  needed for NVIDIA VFG; it is built on first use
+#                  (build-vfg-proton.sh, needs podman or docker)
+#   VEYRA_LOG=1    write a Proton log to $VEYRA_HOME/logs
+#   VEYRA_HOME     where everything lives (default ~/.local/share/veyra-proton)
+#   VEYRA_NGX_DIR  folder with the driver's nvngx.dll, if not found automatically
+# Overrides for development, outside the pinned set and untested:
+#   VEYRA_APP      folder with veyra_qml_ui.exe
+#   VEYRA_PROTON   path to another Proton's "proton" script
+#   VEYRA_PREFIX   compat data directory
 #
 # See docs/LINUX_PROTON.md for what works and what does not.
 set -euo pipefail
 
+here="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+# shellcheck source=versions.sh
+. "$here/versions.sh"
+
+setup_only=0
+if [ "${1:-}" = "--setup" ]; then setup_only=1; shift; fi
+vfg="${VEYRA_VFG:-0}"
+
+if [ -n "${VEYRA_APP:-}" ]; then
+  app="$VEYRA_APP"
+  [ -f "$app/veyra_qml_ui.exe" ] || die "veyra_qml_ui.exe not found in VEYRA_APP=$app"
+else
+  ensure_veyra_app
+  app="$VEYRA_APP_DIR"
+fi
+
+if [ -n "${VEYRA_PROTON:-}" ]; then
+  proton="$VEYRA_PROTON"
+  [ -f "$proton" ] || die "Proton not found at VEYRA_PROTON=$proton"
+elif [ "$vfg" = 1 ]; then
+  [ -f "$VEYRA_VFG_PROTON_DIR/.veyra-vfg-complete" ] || "$here/build-vfg-proton.sh"
+  proton="$VEYRA_VFG_PROTON_DIR/proton"
+else
+  ensure_ge_proton
+  proton="$VEYRA_GE_DIR/proton"
+fi
+
+# The two Proton variants ship different d3d12core.dll builds and Proton does
+# not replace DLLs in an existing prefix, so each gets its own prefix.
+if [ "$vfg" = 1 ]; then default_prefix="$VEYRA_HOME/prefix-vfg"; else default_prefix="$VEYRA_HOME/prefix"; fi
+prefix="${VEYRA_PREFIX:-$default_prefix}"
+mkdir -p "$prefix"
+
 steam_root="${STEAM_COMPAT_CLIENT_INSTALL_PATH:-$HOME/.local/share/Steam}"
 [ -d "$steam_root" ] || steam_root="$HOME/.steam/steam"
-
-find_app() {
-  local here; here="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
-  local d
-  for d in "${VEYRA_APP:-}" "$PWD" "$here" "$here/../.."; do
-    [ -n "$d" ] && [ -f "$d/veyra_qml_ui.exe" ] && { (cd "$d" && pwd); return 0; }
-  done
-  return 1
-}
-
-app="$(find_app)" || {
-  echo "veyra_qml_ui.exe not found. Set VEYRA_APP to the extracted portable package." >&2
-  exit 1
-}
-proton="${VEYRA_PROTON:-$steam_root/steamapps/common/Proton - Experimental/proton}"
-[ -f "$proton" ] || { echo "Proton not found at: $proton (set VEYRA_PROTON)" >&2; exit 1; }
-
-prefix="${VEYRA_PREFIX:-${XDG_DATA_HOME:-$HOME/.local/share}/veyra-proton/prefix}"
-mkdir -p "$prefix"
 
 export STEAM_COMPAT_DATA_PATH="$prefix"
 export STEAM_COMPAT_CLIENT_INSTALL_PATH="$steam_root"
 export SteamAppId=0 SteamGameId=veyra
 export PROTON_ENABLE_NVAPI=1 DXVK_ENABLE_NVAPI=1 PROTON_ENABLE_NGX_UPDATER=0
-[ "${VEYRA_CUDA:-0}" = 1 ] && export PROTON_NVIDIA_NVCUDA=1
+[ "$vfg" = 1 ] && export PROTON_NVIDIA_NVCUDA=1
+
+# Inside a container (distrobox, toolbox) whose distribution differs from the
+# host, the host's Vulkan ICD file can name a library path that does not exist
+# here, and Vulkan falls back to llvmpipe. Point the loader at this system's
+# libGLX_nvidia instead. Skipped when VK_DRIVER_FILES is already set.
+fix_container_icd() {
+  { [ -f /run/.containerenv ] || [ -f /.dockerenv ]; } || return 0
+  [ -z "${VK_DRIVER_FILES:-}" ] || return 0
+  local dir="$VEYRA_HOME/icd" lib files="" arch
+  mkdir -p "$dir"
+  while read -r arch lib; do
+    [ -f "$lib" ] || continue
+    printf '{"file_format_version":"1.0.1","ICD":{"library_path":"%s","api_version":"1.4.0"}}\n' "$lib" \
+      > "$dir/nvidia_icd.$arch.json"
+    files="${files:+$files:}$dir/nvidia_icd.$arch.json"
+  done < <(ldconfig -p 2>/dev/null | awk '/libGLX_nvidia\.so\.0 / { print (/x86-64/ ? "x86_64" : "i686"), $NF }' | sort -u)
+  [ -n "$files" ] && export VK_DRIVER_FILES="$files"
+  return 0
+}
+fix_container_icd
 
 if [ "${VEYRA_LOG:-0}" = 1 ]; then
-  mkdir -p "$prefix/../logs"
-  export PROTON_LOG=1 PROTON_LOG_DIR="$(cd "$prefix/../logs" && pwd)"
+  mkdir -p "$VEYRA_HOME/logs"
+  export PROTON_LOG=1 PROTON_LOG_DIR="$VEYRA_HOME/logs"
 fi
 
 # NGX needs nvngx.dll and _nvngx.dll from the Linux NVIDIA driver in system32.
@@ -62,15 +107,21 @@ copy_ngx() {
       return 0
     fi
   done
-  echo "warning: nvngx.dll not found in the NVIDIA driver; RTX Video SR will not start (set VEYRA_NGX_DIR)" >&2
+  say "warning: nvngx.dll not found in the NVIDIA driver; RTX Video SR will not start (set VEYRA_NGX_DIR)"
 }
 
 # The prefix does not exist before the first run; create it so NGX is in place
 # before Veyra starts.
 if [ ! -d "$prefix/pfx/drive_c/windows/system32" ]; then
+  say "creating prefix $prefix"
   "$proton" run wineboot -u >/dev/null 2>&1 || true
 fi
 copy_ngx
+
+if [ "$setup_only" = 1 ]; then
+  say "ready: app=$app proton=$proton prefix=$prefix"
+  exit 0
+fi
 
 args=()
 if [ -n "${1:-}" ]; then
