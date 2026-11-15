@@ -9,8 +9,12 @@
 # Usage: build-vfg-proton.sh [path to GE-Proton11-3]
 # Result: $VEYRA_VFG_DIR/GE-Proton-veyra-vfg/proton   (use it as VEYRA_PROTON with VEYRA_CUDA=1)
 #
-# Tested with GE-Proton11-3 only: the patches target the exact nvcuda and
-# vkd3d-proton commits that build ships. See docs/LINUX_PROTON.md.
+# Everything is pinned. The sources are checked out at fixed commits, and the
+# script refuses a GE-Proton build whose bundled nvcuda and vkd3d-proton differ
+# from those commits, because the patched files replace the bundled ones.
+# Newer upstream releases do not affect an overlay that is already built.
+# VEYRA_VFG_FORCE=1 skips the GE-Proton version check (untested combinations).
+# See docs/LINUX_PROTON.md.
 set -euo pipefail
 
 here="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
@@ -22,18 +26,36 @@ image="${VEYRA_VFG_IMAGE:-fedora:44}"
 name=veyra-vfg-build
 
 nvcuda_repo=https://github.com/SveSop/nvcuda.git
-nvcuda_rev=772b344
+nvcuda_rev=772b344a3594fca916999c5c5288d875332de482
+nvcuda_version=v0.3-13-g772b344          # GE: files/lib/wine/nvidia-libs/nvcuda/version
 vkd3d_repo=https://github.com/HansKristian-Work/vkd3d-proton.git
 vkd3d_rev=3dfc6f07d0953b1e8b41705275c2c59cc7374fc5
+vkd3d_version=vkd3d-1.1-5438-g3dfc6f07d    # GE: files/lib/wine/vkd3d-proton/version
 
 [ -f "$ge/proton" ] || { echo "GE-Proton not found at $ge" >&2; exit 1; }
 [ -n "$engine" ] || { echo "podman or docker is required" >&2; exit 1; }
+
+# The overlay swaps single files inside GE-Proton, so the base must ship the
+# same component versions the patches were written and tested against.
+check_bundled() { # name version-file expected
+  local got; got="$(tr -d '[:space:]' < "$2" 2>/dev/null || true)"
+  case "$got" in
+    *"$3"*) ;;
+    *) echo "$1 in $ge is '${got:-unknown}', expected $3." >&2
+       if [ "${VEYRA_VFG_FORCE:-0}" != 1 ]; then
+         echo "Use GE-Proton11-3, or set VEYRA_VFG_FORCE=1 to try anyway." >&2; exit 1
+       fi ;;
+  esac
+}
+check_bundled nvcuda "$ge/files/lib/wine/nvidia-libs/nvcuda/version" "$nvcuda_version"
+check_bundled vkd3d-proton "$ge/files/lib/wine/vkd3d-proton/version" "$vkd3d_version"
 mkdir -p "$work/src"
 
 fetch() { # repo rev dir patch
   if [ ! -d "$work/src/$3/.git" ]; then git clone "$1" "$work/src/$3"; fi
   git -C "$work/src/$3" fetch --quiet origin
-  git -C "$work/src/$3" checkout --quiet --force "$2"
+  git -C "$work/src/$3" checkout --quiet --force --detach "$2"
+  [ "$(git -C "$work/src/$3" rev-parse HEAD)" = "$2" ] || { echo "$3: commit $2 not found" >&2; exit 1; }
   git -C "$work/src/$3" clean -qfd -e 'build64'
   git -C "$work/src/$3" submodule update --init --recursive
   git -C "$work/src/$3" apply "$here/patches/$4"

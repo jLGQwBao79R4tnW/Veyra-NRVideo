@@ -104,8 +104,29 @@ in two places, and both need a patched component:
    gives shared committed buffers a dedicated exportable allocation registered
    with D3DKMT (2 files, 64 lines).
 
-The patches apply to the exact commits shipped in GE-Proton11-3:
-SveSop/nvcuda `772b344` and HansKristian-Work/vkd3d-proton `3dfc6f07`.
+### Pinned versions
+
+The patches are written against, and were tested with, exactly these versions.
+`build-vfg-proton.sh` checks out these commits and nothing newer:
+
+| Component | Pinned to | How it is enforced |
+|---|---|---|
+| nvcuda | SveSop/nvcuda `772b344a3594fca916999c5c5288d875332de482` (`v0.3-13-g772b344`) | fixed commit in the script |
+| vkd3d-proton | HansKristian-Work/vkd3d-proton `3dfc6f07d0953b1e8b41705275c2c59cc7374fc5` (`vkd3d-1.1-5438-g3dfc6f07d`) | fixed commit in the script |
+| Proton base | GE-Proton11-3 | the script reads the two `version` files inside the GE-Proton folder and stops if they differ |
+
+New upstream releases of nvcuda, vkd3d-proton or GE-Proton therefore do not
+change or break an overlay: the script keeps building the same sources, and an
+overlay that is already built is a self-contained folder. Keep GE-Proton11-3
+installed, because the overlay is a symlink copy of it and Steam may offer to
+replace it with a newer GE-Proton.
+
+Two things are not pinned: the build container image (`fedora:44`, override
+with `VEYRA_VFG_IMAGE`) and the Wine headers it installs (11.21 when tested).
+Moving to a newer GE-Proton means rebasing both patches onto the commits that
+build ships and re-testing; `VEYRA_VFG_FORCE=1` only skips the check. The
+patches become unnecessary once vkd3d-proton supports shared committed buffers
+and Wine MR !12339 lands with an nvcuda release that uses it.
 
 Result with both patches, test clip 1080p30 → SR to 4K → VFG 2X, quality
 Medium, `compatibility=SM86-experimental`: 60 fps on screen from 30, 1% low
