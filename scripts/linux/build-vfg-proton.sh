@@ -69,7 +69,7 @@ trap '"$engine" rm -f "$name" >/dev/null 2>&1 || true' EXIT
 
 # podman (rootless) maps the caller to root inside the container; docker needs -u.
 user_args=()
-case "$engine" in *docker) user_args=(-u "$(id -u):$(id -g)");; esac
+"$engine" --version 2>/dev/null | grep -qi podman || user_args=(-u "$(id -u):$(id -g)")
 
 "$engine" exec "${user_args[@]}" -w /work/nvcuda "$name" sh -c \
   'meson setup --cross-file build-wine64.txt --buildtype release build64 && ninja -C build64'

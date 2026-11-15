@@ -68,6 +68,26 @@ export SteamAppId=0 SteamGameId=veyra
 export PROTON_ENABLE_NVAPI=1 DXVK_ENABLE_NVAPI=1 PROTON_ENABLE_NGX_UPDATER=0
 [ "$vfg" = 1 ] && export PROTON_NVIDIA_NVCUDA=1
 
+# Inside a container (distrobox, toolbox) whose distribution differs from the
+# host, the host's Vulkan ICD file can name a library path that does not exist
+# here, and Vulkan falls back to llvmpipe. Point the loader at this system's
+# libGLX_nvidia instead. Skipped when VK_DRIVER_FILES is already set.
+fix_container_icd() {
+  { [ -f /run/.containerenv ] || [ -f /.dockerenv ]; } || return 0
+  [ -z "${VK_DRIVER_FILES:-}" ] || return 0
+  local dir="$VEYRA_HOME/icd" lib files="" arch
+  mkdir -p "$dir"
+  while read -r arch lib; do
+    [ -f "$lib" ] || continue
+    printf '{"file_format_version":"1.0.1","ICD":{"library_path":"%s","api_version":"1.4.0"}}\n' "$lib" \
+      > "$dir/nvidia_icd.$arch.json"
+    files="${files:+$files:}$dir/nvidia_icd.$arch.json"
+  done < <(ldconfig -p 2>/dev/null | awk '/libGLX_nvidia\.so\.0 / { print (/x86-64/ ? "x86_64" : "i686"), $NF }' | sort -u)
+  [ -n "$files" ] && export VK_DRIVER_FILES="$files"
+  return 0
+}
+fix_container_icd
+
 if [ "${VEYRA_LOG:-0}" = 1 ]; then
   mkdir -p "$VEYRA_HOME/logs"
   export PROTON_LOG=1 PROTON_LOG_DIR="$VEYRA_HOME/logs"

@@ -61,9 +61,10 @@ and every machine ends up with the same versions. About 1.2 GB is downloaded.
 `VEYRA_LOG=1` writes a Proton log to `$VEYRA_HOME/logs`. Veyra's own log is
 `logs/veyra-qml.log` inside the package folder.
 
-In Veyra: Tab switches to Pro mode. Enable "Super resolution" → RTX Video
-Super Resolution, and "Frame Gen" → FSR 3.1 · 2X. Keep the motion source on
-"Zero motion".
+A fresh install starts with super resolution and frame generation off; turn
+them on once and Veyra remembers. Tab switches to Pro mode. Enable "Super
+resolution" → RTX Video Super Resolution, and "Frame Gen" → FSR 3.1 · 2X. Keep
+the motion source on "Zero motion".
 
 The measurements in "What works" for the stock path were taken with Proton
 Experimental. The launcher uses the pinned GE-Proton11-3 instead, on which
@@ -84,9 +85,10 @@ so the launcher copies them itself and searches the usual host and
 
 If the container's distribution differs from the host, the host Vulkan ICD
 file can point at a library path that does not exist in the container, and
-Vulkan then falls back to llvmpipe. Write an ICD JSON with the container's
-path to `libGLX_nvidia.so.0` and export `VK_DRIVER_FILES` before starting the
-launcher. Running directly on the host avoids this.
+Vulkan then falls back to llvmpipe. The launcher detects a container and
+writes its own ICD files that point at the container's `libGLX_nvidia.so.0`.
+Set `VK_DRIVER_FILES` yourself to override. Running directly on the host
+needs none of this.
 
 ## NVIDIA VFG
 
