@@ -195,3 +195,27 @@ upstream:
   `NvAPI_DISP_GetMonitorCapabilities` are not implemented.
 - **Frame generation cannot be enabled from the command line** in
   `veyra_qml_ui.exe`; the `--fg*` switches exist only in the legacy shell.
+- **Crashes when changing settings.** Veyra sometimes crashes under Proton
+  while settings are being changed. Reported on 2026-11-15; not investigated:
+  it is not known which settings, which Proton variant (pinned GE-Proton or the
+  VFG overlay) or which component is involved, and no logs were collected.
+
+## Decisions and status
+
+- **Approach.** Run the Windows build under Proton. A native port would mean
+  replacing the D3D12 core and was not attempted.
+- **Versions.** Everything is pinned in `scripts/linux/versions.sh` and
+  installed by the scripts into their own folder, so all machines run the same
+  versions and Steam updates do not affect them.
+- **Patches stay local.** The nvcuda and vkd3d-proton patches are stopgaps kept
+  in this repository only. They have not been submitted to those projects and
+  are not intended to be in their current form.
+- **Application code.** No Veyra source changes were made for Linux.
+
+Open items, none in progress:
+
+- NVIDIA VFG on a live PS5 Remote Play stream (measured on a local clip only).
+- PS5 Remote Play on the pinned GE-Proton11-3 (measured on Proton Experimental).
+- A 30 fps game over PS5 Remote Play with "Remove duplicate frames".
+- The settings-change crash above.
+- DLSS Frame Generation on the RTX 30 path, NVOF and D3D12VA decode.
