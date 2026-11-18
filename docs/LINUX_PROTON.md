@@ -250,6 +250,15 @@ upstream:
   succeeds.
 - **dxvk-nvapi.** `NvAPI_Disp_GetVRRInfo` and
   `NvAPI_DISP_GetMonitorCapabilities` are not implemented.
+- **PS5 stream settings from Settings are ignored** (not Linux-specific, also
+  in upstream 2.1.9). Quality, codec and bitrate chosen in Settings → PS5 only
+  change an in-memory form; opening the PS5 dialog or resuming the last source
+  reloads the form from the pairing file, and only "Connect" writes it back.
+  Every connect on 2026-11-18 therefore used 1080p60 H.264 15 Mbit/s.
+  Workaround with the release build: change them in the PS5 connection dialog
+  itself, then press Connect; they are kept from then on. Fixed in source on
+  this branch (`ps5Set` in `src/ui/bridge/RemotePlay.cpp` writes them to the
+  selected pairing at once), not yet in any build.
 - **Frame generation cannot be enabled from the command line** in
   `veyra_qml_ui.exe`; the `--fg*` switches exist only in the legacy shell.
 

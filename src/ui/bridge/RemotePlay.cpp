@@ -7,6 +7,7 @@ namespace {
 constexpr uint32_t kPs5Bitrates[] = {5000, 10000, 15000, 20000, 30000, 50000, 80000, 100000};
 #ifdef VEYRA_ENABLE_REMOTEPLAY
 std::filesystem::path ps5Settings() { return remoteplay::profileDirectory() / L"settings.ini"; }
+remoteplay::VideoProfile ps5Video(const QVariantMap& f);
 #endif
 }
 QVariantMap QmlPlayerBridge::ps5() const {
@@ -327,6 +328,19 @@ bool QmlPlayerBridge::ps5Set(const QString& key, const QVariant& value) {
     } else if (key == QLatin1String("viewOnly")) impl_->ps5Form[key] = value.toBool();
     else if (key == QLatin1String("host") || key == QLatin1String("account")) impl_->ps5Form[key] = value.toString().trimmed();
     else return false;
+#ifdef VEYRA_ENABLE_REMOTEPLAY
+    // Store stream settings in the selected pairing at once. Before, they were
+    // written only by ps5Connect(), and opening the PS5 dialog (ps5Load) reset
+    // the form from the pairing, so a choice made in Settings was never used.
+    static const QSet<QString> streamKeys{"quality", "codec", "bitrate", "viewOnly"};
+    if (streamKeys.contains(key) && !impl_->ps5Profile.empty() && !impl_->ps5Busy) {
+        const auto path = remoteplay::profileDirectory() / impl_->ps5Profile;
+        if (auto saved = remoteplay::loadProfile(path)) {
+            saved->video = ps5Video(impl_->ps5Form); saved->viewOnly = impl_->ps5Form.value("viewOnly").toBool();
+            if (!remoteplay::saveProfile(path, *saved)) veyra::log::warn("remoteplay-ui", "saving stream settings failed");
+        }
+    }
+#endif
     emit ps5Changed();
     return true;
 }
