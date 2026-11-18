@@ -195,3 +195,40 @@ upstream:
   `NvAPI_DISP_GetMonitorCapabilities` are not implemented.
 - **Frame generation cannot be enabled from the command line** in
   `veyra_qml_ui.exe`; the `--fg*` switches exist only in the legacy shell.
+
+## Upstream sync 2026-11-18
+
+Upstream `Likely7/Veyra-NRVideo` main was merged at `33dfdf71` (fork point
+was `c327d45`, 2026-11-15). The merge was clean: upstream did not touch
+`scripts/linux/` or this page, and none of our files exist upstream.
+
+What this means for the Linux path:
+
+- **The launcher still runs Veyra 2.1.6.** `veyra-proton.sh` downloads the
+  pinned release package, not this source tree, so the merge changes nothing
+  that runs on Linux. Upstream has since released 2.1.9 (same package name
+  pattern, `Veyra-2.1.9-NVIDIA-win64-portable.zip`). Moving the pin means
+  updating `VEYRA_VERSION` and `VEYRA_PKG_SHA256` in `versions.sh` and
+  re-running the checks in "What works" on the test machine; not done yet.
+- **NVIDIA VFG patches still apply to the same code.** `src/pipeline/VfgBackend.cpp`
+  is unchanged upstream, so the shared committed buffer + CUDA import path the
+  two patches fix is the same.
+- **Upstream now has its own, unrelated Linux part:** a native OBS filter in
+  `linux/obs/` (3D LUT, exposure/contrast/saturation, FXAA, sharpen; no NGX,
+  no VFG), see [OBS_FILTER.md](OBS_FILTER.md). On non-Windows the top-level
+  `CMakeLists.txt` now builds only that module and stops. It is not a Linux
+  port of the player and does not replace the Proton path. Built here with
+  `libobs-dev` 30.0.2 on Ubuntu 24.04: module and parser test pass.
+  Note: the test is registered in `linux/obs`, so `ctest --test-dir out/obs`
+  (as in `.github/workflows/obs-filter-checks.yml`) finds no tests and exits
+  successfully; `ctest --test-dir out/obs/linux/obs` runs it.
+- **New upstream features not checked under Proton** (only relevant once the
+  pin moves past 2.1.6 or a self-built exe is used): DirectShow virtual camera
+  (`virtualcam/`, registered by `veyra-camera-setup.exe`), Bilibili page,
+  Dolby Vision profile 5/7, startup music and intro, AMD AMF frame rate
+  conversion (AMD only), the optional software decode switch for Xbox, and the
+  NVIDIA VRR profile row (writes NvAPI driver profiles through
+  `nvapi64.dll`; under Proton that is dxvk-nvapi, where driver profiles are
+  stubbed at best, so expect it not to work).
+- Two new upstream workflows now also run in this fork: `obs-filter-checks.yml`
+  (Ubuntu) and `vrr-profile-checks.yml` (Windows runner).
