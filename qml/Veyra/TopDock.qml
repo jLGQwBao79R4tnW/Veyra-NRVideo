@@ -43,6 +43,7 @@ Item {
     readonly property var items: [
         { id: "min",   icon: "tv", tip: qsTr("极简") },
         { id: "pro",   icon: "sliders", tip: qsTr("专业模式") },
+        { id: "bili",  icon: "bili", tip: qsTr("B 站") },
         { id: "exp",   icon: "upload", tip: qsTr("导出") },
         { id: "set",   icon: "settings", tip: qsTr("设置") }
     ]
@@ -94,7 +95,7 @@ Item {
         implicitWidth: content.implicitWidth + 20
         height: 44
         radius: height / 2
-        color: "#000000"
+        color: Theme.shade(0, 0, 0)
         border.width: 1
         border.color: Qt.rgba(1, 1, 1, 0.1)
         // Over the picture on the cinema page: cut out of the video window.
@@ -131,12 +132,12 @@ Item {
                 Rectangle {
                     anchors.fill: parent
                     radius: height / 2
-                    color: logoHover.hovered ? "#1A1A1F" : Qt.rgba(0.102, 0.102, 0.122, 0)
+                    color: logoHover.hovered ? Theme.shade(26, 26, 31) : Theme.shade(26, 26, 31, 0)
                     Behavior on color { ColorAnimation { duration: Theme.d(200) } }
                 }
                 Image {
                     anchors.centerIn: parent
-                    source: "logo.png"
+                    source: Theme.logoImage
                     sourceSize.width: 26
                     fillMode: Image.PreserveAspectFit
                 }
@@ -159,7 +160,7 @@ Item {
                     width: 32
                     height: 30
                     radius: 999
-                    color: "#26262D"
+                    color: Theme.shade(38, 38, 45)
                     x: {
                         let idx = 0
                         for (let i = 0; i < dockRoot.items.length; ++i)
@@ -187,6 +188,10 @@ Item {
                             VIcon {
                                 anchors.centerIn: parent
                                 name: btn.modelData.icon
+                                // The Bilibili button's letter B is a single-glyph mark: it
+                                // needs a heavier stroke than the line icons beside it to
+                                // read as bold at 16px (user decision 2026-10-23).
+                                strokeWidth: btn.modelData.icon === "bili" ? 2.5 : 1.7
                                 color: "#FFFFFF"
                                 opacity: dockRoot.currentPage === btn.modelData.id || tip.on ? 1.0 : 0.45
                                 Behavior on opacity { NumberAnimation { duration: Theme.d(200) } }
@@ -310,7 +315,7 @@ Item {
                     Rectangle {
                         anchors.fill: parent
                         radius: height / 2
-                        color: whover.hovered ? (wbtn.modelData.id === "close" ? Qt.rgba(1, 0.365, 0.365, 0.22) : "#1A1A1F") : "transparent"
+                        color: whover.hovered ? (wbtn.modelData.id === "close" ? Qt.rgba(1, 0.365, 0.365, 0.22) : Theme.shade(26, 26, 31)) : "transparent"
                         Behavior on color { ColorAnimation { duration: Theme.d(200) } }
                     }
                     VIcon {

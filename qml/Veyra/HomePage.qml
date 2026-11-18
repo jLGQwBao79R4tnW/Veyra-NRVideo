@@ -13,6 +13,10 @@ VPage {
     signal requestPage(string page)
     // The coffee line under the title: Main opens 设置 → 赞助作者.
     signal requestSponsor()
+    // Main.qml keeps the dusk wordmark hidden while the startup intro (DuskIntro.qml) flies a
+    // copy of it in, and aims that copy at this item.
+    property bool introHold: false
+    readonly property Item wordmarkItem: wordmark
 
     ColumnLayout {
         anchors.centerIn: parent
@@ -26,6 +30,7 @@ VPage {
         // keep the layout the same as a plain 128px image.
         Item {
             id: mark
+            visible: !Theme.dusk
             Layout.alignment: Qt.AlignHCenter
             Layout.topMargin: -40
             Layout.bottomMargin: -40
@@ -45,7 +50,7 @@ VPage {
             Image {
                 id: logoImg
                 anchors.centerIn: parent
-                source: "logo.png"
+                source: Theme.logoImage
                 sourceSize.width: 128
                 fillMode: Image.PreserveAspectFit
             }
@@ -56,12 +61,51 @@ VPage {
                 source: logoImg
                 anchors.fill: logoImg
                 shadowEnabled: true
-                shadowColor: "#FFFFFF"
+                // The dusk logo carries its own neon glow; the breath adds a pink one to it.
+                shadowColor: Theme.dusk ? "#F396CE" : "#FFFFFF"
                 shadowHorizontalOffset: 0
                 shadowVerticalOffset: 0
                 blurMax: 64
                 shadowBlur: 0.625 + 0.3125 * mark.breath
-                shadowOpacity: 0.35 + 0.2 * mark.breath
+                shadowOpacity: (Theme.dusk ? 0.22 : 0.35) + 0.2 * mark.breath
+            }
+        }
+
+        // 日落: the user's wordmark (tools/qt_probe/make-wordmark-dusk.py) in place of the gamepad
+        // and the title, a baked glow breathing behind it (the software scene graph draws no
+        // MultiEffect). 0.24 of the page height, 130..210 px, so short windows keep the cards.
+        Item {
+            id: duskMark
+            visible: Theme.dusk
+            Layout.alignment: Qt.AlignHCenter
+            implicitWidth: wordmark.width
+            implicitHeight: wordmark.height
+            property real breath: 0
+            // Only while it shows, as the gamepad's breath (see above).
+            SequentialAnimation on breath {
+                running: !Theme.reduced && duskMark.visible && !root.introHold
+                loops: Animation.Infinite
+                NumberAnimation { to: 1; duration: Theme.d(2250); easing.type: Easing.InOutSine }
+                NumberAnimation { to: 0; duration: Theme.d(2250); easing.type: Easing.InOutSine }
+            }
+            Image {
+                // wordmark-dusk-glow.png is the wordmark's box grown by 186/1164 of its width.
+                readonly property real pad: wordmark.width * 186 / 1164
+                x: -pad
+                y: -pad
+                width: wordmark.width + 2 * pad
+                height: wordmark.height + 2 * pad
+                source: "wordmark-dusk-glow.png"
+                opacity: root.introHold ? 0 : 0.16 + 0.14 * duskMark.breath
+            }
+            Image {
+                id: wordmark
+                objectName: "home-wordmark"
+                height: Math.round(Math.max(130, Math.min(210, root.height * 0.24)))
+                width: Math.round(height * 1164 / 969)
+                source: "wordmark-dusk.png"
+                sourceSize: Qt.size(width, height)
+                opacity: root.introHold ? 0 : 1
             }
         }
 
@@ -73,6 +117,7 @@ VPage {
             spacing: 6
             Text {
                 Layout.alignment: Qt.AlignHCenter
+                visible: !Theme.dusk                    // the dusk wordmark says it
                 text: "Veyra NR Video"
                 color: Theme.t1
                 font.family: Theme.fontUi
@@ -321,26 +366,40 @@ VPage {
         // .recent: 692 wide, left-aligned, wrapping; "最近" in --v-t3 then 28px chips
         // with a film/image icon. Present only when there are recent files; a chip
         // whose file is gone is dimmed and does nothing (clicking it cannot open it).
-        Flow {
-            id: recent
+        // Custom: a "清空" action sits at the right edge of this block, so it lines up
+        // with 继续上次's "开始" button above it, and it wears the same primary button.
+        // Anchored Item rather than a layout: the chips' own width is what a layout
+        // would use for its implicit size, and the long file names then widened the
+        // whole column and pushed the button out of line.
+        // It confirms first, because the list is a convenience the user may still want.
+        Item {
+            id: recentBlock
             Layout.alignment: Qt.AlignHCenter
             Layout.preferredWidth: srcGrid.width
+            implicitHeight: recent.height
+            Layout.preferredHeight: implicitHeight
             visible: veyra.recentFiles.length > 0
-            spacing: 8
-            Text {
-                height: 28
-                verticalAlignment: Text.AlignVCenter
-                text: qsTr("最近")
-                color: Theme.t3
-                font.family: Theme.fontUi
-                font.pixelSize: 12
-            }
-            Repeater {
-                model: veyra.recentFiles
-                delegate: Rectangle {
-                    id: chip
-                    required property var modelData
-                    readonly property bool isImage: /\.(png|jpe?g|bmp|webp|tiff?)$/i.test(modelData.path)
+            Flow {
+                id: recent
+                anchors.left: parent.left
+                anchors.right: clearRecent.left
+                anchors.rightMargin: 12
+                anchors.top: parent.top
+                spacing: 8
+                Text {
+                    height: 28
+                    verticalAlignment: Text.AlignVCenter
+                    text: qsTr("最近")
+                    color: Theme.t3
+                    font.family: Theme.fontUi
+                    font.pixelSize: 12
+                }
+                Repeater {
+                    model: veyra.recentFiles
+                    delegate: Rectangle {
+                        id: chip
+                        required property var modelData
+                        readonly property bool isImage: /\.(png|jpe?g|bmp|webp|tiff?)$/i.test(modelData.path)
                     width: chipRow.implicitWidth + 22
                     height: 28
                     radius: 99
@@ -373,6 +432,21 @@ VPage {
                     TapHandler { onTapped: if (modelData.exists) veyra.openPath(modelData.path) }
                 }
             }
+            }
+            VButton {
+                id: clearRecent
+                objectName: "home-clear-recent"
+                // Same right inset as the resume card's own row (10), so this button's
+                // right edge lands exactly on 开始's.
+                anchors.right: parent.right
+                anchors.rightMargin: 10
+                anchors.top: parent.top
+                text: qsTr("清空")
+                iconName: "trash"
+                primary: true
+                tip: qsTr("只清空这个列表，不会删除文件。")
+                onClicked: clearRecentConfirm.open()
+            }
         }
     }
 
@@ -381,4 +455,18 @@ VPage {
     VRise { target: hello; d: 1 }
     VRise { target: resume; d: 6 }
     VRise { target: recent; d: 7 }
+
+    // Custom: clearing the home page's recent list. It only drops the history (the
+    // files stay on disk), so the question says so, and the accept button repeats
+    // the action word from the button that opened it.
+    VConfirm {
+        id: clearRecentConfirm
+        objectName: "home-clear-recent-confirm"
+        glyph: "film"
+        title: qsTr("清空最近播放记录？")
+        text: qsTr("只清空这个列表，不会删除文件。")
+        acceptText: qsTr("清空")
+        rejectText: qsTr("取消")
+        onAccepted: veyra.clearRecentFiles()
+    }
 }
