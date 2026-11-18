@@ -22,11 +22,24 @@ here="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 
 out="$VEYRA_VFG_PROTON_DIR"
 src="$VEYRA_HOME/build/src"
-engine="${CONTAINER_ENGINE:-$(command -v podman || command -v docker || true)}"
+# CONTAINER_ENGINE may hold several words, e.g. "host-spawn docker".
+# shellcheck disable=SC2206
+engine=(${CONTAINER_ENGINE:-$(command -v podman || command -v docker || true)})
+# Inside a distrobox or toolbox there is usually no engine, but the host has
+# one; reach it through the container's host bridge. The source folder lives
+# under $HOME, which these containers share with the host at the same path.
+if [ "${#engine[@]}" = 0 ]; then
+  for bridge in distrobox-host-exec host-spawn; do
+    command -v "$bridge" >/dev/null || continue
+    for e in podman docker; do
+      if "$bridge" "$e" --version >/dev/null 2>&1; then engine=("$bridge" "$e"); break 2; fi
+    done
+  done
+fi
 image="${VEYRA_VFG_IMAGE:-fedora:44}"
 name=veyra-vfg-build
 
-[ -n "$engine" ] || die "podman or docker is required to build the VFG overlay"
+[ "${#engine[@]}" -gt 0 ] || die "podman or docker is required to build the VFG overlay"
 command -v git >/dev/null || die "git is required"
 
 ensure_ge_proton
@@ -59,21 +72,21 @@ fetch "$NVCUDA_REPO" "$NVCUDA_REV" nvcuda 0001-nvcuda-wine11-d3dkmt-external-mem
 fetch "$VKD3D_REPO" "$VKD3D_REV" vkd3d-proton 0002-vkd3d-proton-shared-committed-buffers.patch
 
 say "building in a $image container (several minutes)"
-"$engine" rm -f "$name" >/dev/null 2>&1 || true
+"${engine[@]}" rm -f "$name" >/dev/null 2>&1 || true
 # VEYRA_VFG_RUN_ARGS: extra arguments for the container, e.g. proxy settings.
 # shellcheck disable=SC2086
-"$engine" run -d --name "$name" ${VEYRA_VFG_RUN_ARGS:-} -v "$src:/work:z" "$image" sleep infinity >/dev/null
-trap '"$engine" rm -f "$name" >/dev/null 2>&1 || true' EXIT
-"$engine" exec "$name" dnf -y install wine-devel mingw64-gcc mingw64-gcc-c++ \
+"${engine[@]}" run -d --name "$name" ${VEYRA_VFG_RUN_ARGS:-} -v "$src:/work:z" "$image" sleep infinity >/dev/null
+trap '"${engine[@]}" rm -f "$name" >/dev/null 2>&1 || true' EXIT
+"${engine[@]}" exec "$name" dnf -y install wine-devel mingw64-gcc mingw64-gcc-c++ \
   mingw64-winpthreads-static meson ninja-build gcc gcc-c++ git glslang python3
 
 # podman (rootless) maps the caller to root inside the container; docker needs -u.
 user_args=()
-"$engine" --version 2>/dev/null | grep -qi podman || user_args=(-u "$(id -u):$(id -g)")
+"${engine[@]}" --version 2>/dev/null | grep -qi podman || user_args=(-u "$(id -u):$(id -g)")
 
-"$engine" exec "${user_args[@]}" -w /work/nvcuda "$name" sh -c \
+"${engine[@]}" exec "${user_args[@]}" -w /work/nvcuda "$name" sh -c \
   'meson setup --cross-file build-wine64.txt --buildtype release build64 && ninja -C build64'
-"$engine" exec "${user_args[@]}" -w /work/vkd3d-proton "$name" sh -c \
+"${engine[@]}" exec "${user_args[@]}" -w /work/vkd3d-proton "$name" sh -c \
   'meson setup --cross-file build-win64.txt --buildtype release -Denable_extras=false build64 && ninja -C build64'
 
 # Symlink copy of our own pinned GE-Proton. The launcher script must be a real

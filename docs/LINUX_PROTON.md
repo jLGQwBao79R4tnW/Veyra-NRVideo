@@ -186,6 +186,10 @@ modes, see "Settings and pairing".
 In Veyra choose "Frame Gen" → NVIDIA VFG → 2X.
 
 Behind a proxy, pass container options through `VEYRA_VFG_RUN_ARGS`.
+Inside a distrobox or toolbox without its own podman or docker, the build
+script uses the host's engine through `distrobox-host-exec` or `host-spawn`.
+`CONTAINER_ENGINE` may name the engine directly, also as several words
+(`CONTAINER_ENGINE="host-spawn docker"`).
 
 The scripts were run from nothing on the test machine (inside a distrobox,
 docker on the host): setup took 66 s, the overlay build 162 s. NVIDIA VFG 2X
