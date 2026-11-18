@@ -108,7 +108,9 @@ Nothing is moved while Veyra is running.
 
 The PS5 profile is encrypted with `CryptProtectData`. Wine derives that key
 from the user name, which is `steamuser` in every Proton prefix, so the same
-file decrypts in both prefixes. If it ever does not, the log shows
+file decrypts in both prefixes. Confirmed on the test machine on 2026-11-18:
+a profile paired in `prefix` was read in `prefix-vfg` (`profiles=1
+readFailures=0`). If it ever does not, the log shows
 `[remoteplay-ui] profiles=N readFailures=M` with M > 0, and pairing once more
 fixes it.
 
@@ -189,7 +191,9 @@ Behind a proxy, pass container options through `VEYRA_VFG_RUN_ARGS`.
 Inside a distrobox or toolbox without its own podman or docker, the build
 script uses the host's engine through `distrobox-host-exec` or `host-spawn`.
 `CONTAINER_ENGINE` may name the engine directly, also as several words
-(`CONTAINER_ENGINE="host-spawn docker"`).
+(`CONTAINER_ENGINE="host-spawn docker"`). On the test machine (Ubuntu 24.04
+distrobox on Fedora, docker on the host through `host-spawn`) the overlay
+build of 2.1.9 took about 6 minutes.
 
 The scripts were run from nothing on the test machine (inside a distrobox,
 docker on the host): setup took 66 s, the overlay build 162 s. NVIDIA VFG 2X
