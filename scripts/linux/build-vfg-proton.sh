@@ -6,6 +6,7 @@
 # builds two patched components in a throw-away container and installs them
 # into a copy of that GE-Proton:
 #   - nvcuda (CUDA bridge)      + patches/0001-nvcuda-wine11-d3dkmt-external-memory.patch
+#                                 + patches/0003-nvcuda-no-double-destroy-of-external-semaphores.patch
 #   - vkd3d-proton (D3D12)      + patches/0002-vkd3d-proton-shared-committed-buffers.patch
 #
 # Everything is pinned: GE-Proton by release and checksum, the sources by full
@@ -58,17 +59,20 @@ check_bundled nvcuda "$ge/files/lib/wine/nvidia-libs/nvcuda/version" "$NVCUDA_RE
 check_bundled vkd3d-proton "$ge/files/lib/wine/vkd3d-proton/version" "$VKD3D_REV"
 
 mkdir -p "$src"
-fetch() { # repo rev dir patch
+fetch() { # repo rev dir patch...
   if [ ! -d "$src/$3/.git" ]; then git clone "$1" "$src/$3"; fi
   git -C "$src/$3" fetch --quiet origin
   git -C "$src/$3" checkout --quiet --force --detach "$2"
   [ "$(git -C "$src/$3" rev-parse HEAD)" = "$2" ] || die "$3: commit $2 not found"
   git -C "$src/$3" clean -qfdx
   git -C "$src/$3" submodule update --init --recursive
-  git -C "$src/$3" apply "$here/patches/$4"
+  local repo_dir="$src/$3" p
+  shift 3
+  for p in "$@"; do git -C "$repo_dir" apply "$here/patches/$p"; done
 }
 say "fetching sources"
-fetch "$NVCUDA_REPO" "$NVCUDA_REV" nvcuda 0001-nvcuda-wine11-d3dkmt-external-memory.patch
+fetch "$NVCUDA_REPO" "$NVCUDA_REV" nvcuda 0001-nvcuda-wine11-d3dkmt-external-memory.patch \
+  0003-nvcuda-no-double-destroy-of-external-semaphores.patch
 fetch "$VKD3D_REPO" "$VKD3D_REV" vkd3d-proton 0002-vkd3d-proton-shared-committed-buffers.patch
 
 say "building in a $image container (several minutes)"
@@ -110,6 +114,7 @@ done
   echo "nvcuda=$NVCUDA_REV"
   echo "vkd3d-proton=$VKD3D_REV"
   echo "image=$image"
+  echo "patches=$(vfg_patches_id)"
 } > "$out/.veyra-vfg-complete"
 
 say "done. Start Veyra with NVIDIA VFG support: VEYRA_VFG=1 $here/veyra-proton.sh"

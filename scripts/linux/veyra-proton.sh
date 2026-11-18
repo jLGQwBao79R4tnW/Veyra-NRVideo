@@ -46,7 +46,10 @@ if [ -n "${VEYRA_PROTON:-}" ]; then
   proton="$VEYRA_PROTON"
   [ -f "$proton" ] || die "Proton not found at VEYRA_PROTON=$proton"
 elif [ "$vfg" = 1 ]; then
-  [ -f "$VEYRA_VFG_PROTON_DIR/.veyra-vfg-complete" ] || "$here/build-vfg-proton.sh"
+  if ! grep -qx "patches=$(vfg_patches_id)" "$VEYRA_VFG_PROTON_DIR/.veyra-vfg-complete" 2>/dev/null; then
+    [ -f "$VEYRA_VFG_PROTON_DIR/.veyra-vfg-complete" ] && say "VFG patches changed, rebuilding the overlay"
+    "$here/build-vfg-proton.sh"
+  fi
   proton="$VEYRA_VFG_PROTON_DIR/proton"
 else
   ensure_ge_proton

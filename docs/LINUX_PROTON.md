@@ -117,7 +117,8 @@ fixes it.
 ## NVIDIA VFG
 
 NVIDIA VFG shares D3D12 buffers and fences with CUDA. Under Proton this fails
-in two places, and both need a patched component:
+in two places that need a patched component, and the CUDA bridge has a third
+bug that crashes on repeated VFG starts:
 
 1. **CUDA bridge.** Stock Proton ships a stub `nvcuda.dll`, so `cuInit` is
    missing. GE-Proton and Proton-CachyOS ship the nvidia-libs bridge
@@ -140,6 +141,23 @@ in two places, and both need a patched component:
    handle. `scripts/linux/patches/0002-vkd3d-proton-shared-committed-buffers.patch`
    gives shared committed buffers a dedicated exportable allocation registered
    with D3DKMT (2 files, 64 lines).
+
+3. **nvcuda double destroy (crash on the third VFG start).** nvcuda keeps the
+   last four imported external semaphores in a ring (`semaphoreHandling()`,
+   upstream commit `d612b0f` "Aggressively try to destroy used semaphores")
+   and destroys the oldest when the ring wraps, even if the application has
+   already destroyed it. Each VFG start imports two fences, and Veyra destroys
+   them when VFG is turned off. So the third VFG start in one Veyra session
+   (switching FG to NVIDIA VFG, away and back twice) destroyed a semaphore a
+   second time and libcuda crashed: `page fault on read access to
+   0x0000000000000048` in `libcuda.so.1`, called from
+   `cuDestroyExternalSemaphore` inside `wine_cuImportExternalSemaphore`
+   (seen 2026-11-18 on the test machine). The first two VFG starts worked
+   (60 generated frames per second, 120 fps output).
+   `scripts/linux/patches/0003-nvcuda-no-double-destroy-of-external-semaphores.patch`
+   removes a semaphore from the ring when the application destroys it.
+   The launcher rebuilds the overlay by itself when the patch set changes
+   (`patches=` line in `.veyra-vfg-complete`).
 
 ### Pinned versions
 
@@ -166,7 +184,7 @@ byte-identical `nvcuda.dll.so`; `d3d12core.dll` and `d3d12.dll` differed only
 in the PE build timestamps. A different container image or compiler version
 could change the binaries further even though the sources are identical.
 
-Moving to a newer GE-Proton means updating `versions.sh`, rebasing both
+Moving to a newer GE-Proton means updating `versions.sh`, rebasing the
 patches onto the commits that build ships, and re-testing. The patches become
 unnecessary once vkd3d-proton supports shared committed buffers and Wine
 MR !12339 lands with an nvcuda release that uses it.

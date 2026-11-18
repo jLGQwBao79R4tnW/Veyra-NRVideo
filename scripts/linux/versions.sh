@@ -77,3 +77,9 @@ ensure_veyra_app() {
   [ -n "$exe" ] || { rm -rf "$tmp"; die "veyra_qml_ui.exe not found in $VEYRA_PKG.zip"; }
   rm -rf "$VEYRA_APP_DIR"; mv "$(dirname "$exe")" "$VEYRA_APP_DIR"; rm -rf "$tmp"
 }
+
+# Identifies the patch set an overlay was built from; veyra-proton.sh rebuilds
+# the overlay when the patches change.
+vfg_patches_id() {
+  cat "$(dirname "${BASH_SOURCE[0]}")"/patches/*.patch | sha256sum | cut -c1-16
+}
