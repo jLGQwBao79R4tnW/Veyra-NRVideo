@@ -1,6 +1,6 @@
 #!/bin/bash
 # Build the Proton overlay that can run NVIDIA VFG in Veyra on Linux.
-# veyra-proton.sh runs this automatically on the first start with VEYRA_VFG=1.
+# veyra-proton.sh runs this automatically on its first start (unless VEYRA_VFG=0).
 #
 # It downloads the pinned GE-Proton (versions.sh) if it is not there yet,
 # builds two patched components in a throw-away container and installs them
@@ -117,4 +117,4 @@ done
   echo "patches=$(vfg_patches_id)"
 } > "$out/.veyra-vfg-complete"
 
-say "done. Start Veyra with NVIDIA VFG support: VEYRA_VFG=1 $here/veyra-proton.sh"
+say "done. Start Veyra with NVIDIA VFG support: $here/veyra-proton.sh"

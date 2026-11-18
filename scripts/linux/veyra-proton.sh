@@ -12,9 +12,10 @@
 # versions.
 #
 # Environment:
-#   VEYRA_VFG=1    use the Proton overlay with patched nvcuda and vkd3d-proton,
-#                  needed for NVIDIA VFG; it is built on first use
-#                  (build-vfg-proton.sh, needs podman or docker)
+#   VEYRA_VFG=0    use plain GE-Proton. The default (1) is the Proton overlay
+#                  with patched nvcuda and vkd3d-proton that NVIDIA VFG needs;
+#                  it is built on first use (build-vfg-proton.sh, needs git and
+#                  podman or docker)
 #   VEYRA_LOG=1    write a Proton log to $VEYRA_HOME/logs
 #   VEYRA_HOME     where everything lives (default ~/.local/share/veyra-proton)
 #   VEYRA_NGX_DIR  folder with the driver's nvngx.dll, if not found automatically
@@ -32,7 +33,7 @@ here="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 
 setup_only=0
 if [ "${1:-}" = "--setup" ]; then setup_only=1; shift; fi
-vfg="${VEYRA_VFG:-0}"
+vfg="${VEYRA_VFG:-1}"
 
 if [ -n "${VEYRA_APP:-}" ]; then
   app="$VEYRA_APP"
@@ -48,7 +49,7 @@ if [ -n "${VEYRA_PROTON:-}" ]; then
 elif [ "$vfg" = 1 ]; then
   if ! grep -qx "patches=$(vfg_patches_id)" "$VEYRA_VFG_PROTON_DIR/.veyra-vfg-complete" 2>/dev/null; then
     [ -f "$VEYRA_VFG_PROTON_DIR/.veyra-vfg-complete" ] && say "VFG patches changed, rebuilding the overlay"
-    "$here/build-vfg-proton.sh"
+    "$here/build-vfg-proton.sh" || die "building the VFG overlay failed; VEYRA_VFG=0 starts Veyra without NVIDIA VFG"
   fi
   proton="$VEYRA_VFG_PROTON_DIR/proton"
 else

@@ -43,14 +43,20 @@ has not been measured on Linux yet.
 
 ## Quick start
 
-Requirements: the proprietary NVIDIA driver, `curl`, `tar`, and `unzip` or
-`python3`. Nothing else has to be installed by hand.
+Requirements: the proprietary NVIDIA driver, `curl`, `tar`, `unzip` or
+`python3`, and for the default NVIDIA VFG mode `git` plus podman or docker
+(see "Running with NVIDIA VFG"). Nothing else has to be installed by hand.
 
 ```bash
 scripts/linux/veyra-proton.sh                    # open Veyra
 scripts/linux/veyra-proton.sh ~/Videos/clip.mp4  # open a file directly
 scripts/linux/veyra-proton.sh --setup            # only download and prepare
+VEYRA_VFG=0 scripts/linux/veyra-proton.sh        # plain GE-Proton, no NVIDIA VFG
 ```
+
+Since 2026-11-18 the launcher starts in NVIDIA VFG mode by default (patched
+Proton overlay, built on the first start). `VEYRA_VFG=0` uses plain
+GE-Proton instead.
 
 On first run the script downloads the pinned Veyra package and the pinned
 GE-Proton, verifies their checksums and unpacks them under
@@ -97,7 +103,7 @@ Veyra keeps its data in two places: PS5, Xbox and Moonlight pairing in
 `settings.ini`), and its own settings, presets and playlist in
 `runtime_local/` next to `veyra_qml_ui.exe`. With one prefix per mode and one
 app folder per version, PS5 had to be paired again after every version change
-and when switching to `VEYRA_VFG=1`.
+and when switching between VFG and plain mode.
 
 The launcher therefore turns both into symlinks into `$VEYRA_HOME/user/`
 (`LocalAppData-Veyra`, `runtime_local`) on every start. Existing data is moved
@@ -195,9 +201,7 @@ MR !12339 lands with an nvcuda release that uses it.
 
 ### Running with NVIDIA VFG
 
-```bash
-VEYRA_VFG=1 scripts/linux/veyra-proton.sh
-```
+This is the default mode; `VEYRA_VFG=0` turns it off.
 
 The first start builds the overlay (`build-vfg-proton.sh`, needs `git` and
 podman or docker): it builds both patched components in a throw-away Fedora
