@@ -224,6 +224,16 @@ What this means for the Linux path:
   hr=0x80004003`, the startup music does not play under Proton (E_POINTER;
   cause not investigated). Proton `err:` lines were only OpenXR and winebth,
   both harmless.
+  Frame generation "does not turn on" on a fresh 2.1.9 profile: the default
+  FG motion source is Automatic, which for DLSS-G (backend 0) and FSR
+  (backend 2) means NVIDIA optical flow. dxvk-nvapi 0.9.2's `nvofapi64`
+  creates the session but answers the `WIDTH_MIN` capability query with
+  status 11, Veyra fails closed (`[nvof-session] scalar cap WIDTH_MIN query
+  failed st=11`, `[graph] NVOF init failed`) and rolls FG back to off without
+  a visible error. Fix: set the frame generation motion source to "Zero
+  motion" and use FSR 3.1 · 2X. NVIDIA VFG in the same run failed with
+  `[vfg] missing API cuInit` because the launcher was started without
+  `VEYRA_VFG=1`, as expected.
   Still to check on 2.1.9: RTX Video SR, FSR 3.1 FG 2X, PS5 Remote Play,
   `VEYRA_VFG=1` with NVIDIA VFG 2X. Until then the "What works" table
   describes 2.1.6.
