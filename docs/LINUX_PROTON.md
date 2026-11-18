@@ -158,6 +158,10 @@ bug that crashes on repeated VFG starts:
    removes a semaphore from the ring when the application destroys it.
    The launcher rebuilds the overlay by itself when the patch set changes
    (`patches=` line in `.veyra-vfg-complete`).
+   Verified 2026-11-18 on 2.1.9 with a PS5 Remote Play stream: four VFG
+   starts in one session without a crash, then about 6 minutes of
+   continuous VFG (21,488 of 21,489 generated frames valid). The rebuild
+   took about 8 minutes.
 
 ### Pinned versions
 
@@ -283,8 +287,9 @@ What this means for the Linux path:
   motion" and use FSR 3.1 · 2X. NVIDIA VFG in the same run failed with
   `[vfg] missing API cuInit` because the launcher was started without
   `VEYRA_VFG=1`, as expected.
-  Still to check on 2.1.9: RTX Video SR, FSR 3.1 FG 2X, PS5 Remote Play,
-  `VEYRA_VFG=1` with NVIDIA VFG 2X. Until then the "What works" table
+  Later the same day on 2.1.9: PS5 Remote Play (1080p60 H.264), FSR 3.1 FG
+  and NVIDIA VFG 2X (`VEYRA_VFG=1`, 60 → 120 fps) worked. Still to check
+  on 2.1.9: RTX Video SR. Until then the "What works" table
   describes 2.1.6.
 - **NVIDIA VFG patches still apply to the same code.** `src/pipeline/VfgBackend.cpp`
   is unchanged upstream, so the shared committed buffer + CUDA import path the
