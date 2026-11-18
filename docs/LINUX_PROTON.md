@@ -90,6 +90,28 @@ writes its own ICD files that point at the container's `libGLX_nvidia.so.0`.
 Set `VK_DRIVER_FILES` yourself to override. Running directly on the host
 needs none of this.
 
+### Settings and pairing
+
+Veyra keeps its data in two places: PS5, Xbox and Moonlight pairing in
+`%LOCALAPPDATA%\Veyra` inside the Wine prefix (`remoteplay/<id>.dat` plus
+`settings.ini`), and its own settings, presets and playlist in
+`runtime_local/` next to `veyra_qml_ui.exe`. With one prefix per mode and one
+app folder per version, PS5 had to be paired again after every version change
+and when switching to `VEYRA_VFG=1`.
+
+The launcher therefore turns both into symlinks into `$VEYRA_HOME/user/`
+(`LocalAppData-Veyra`, `runtime_local`) on every start. Existing data is moved
+there the first time. If the shared folder already exists, a different local
+copy is renamed to `*.local-<date>` and kept. A new Veyra version without
+settings starts from a copy of the newest older version's `runtime_local`.
+Nothing is moved while Veyra is running.
+
+The PS5 profile is encrypted with `CryptProtectData`. Wine derives that key
+from the user name, which is `steamuser` in every Proton prefix, so the same
+file decrypts in both prefixes. If it ever does not, the log shows
+`[remoteplay-ui] profiles=N readFailures=M` with M > 0, and pairing once more
+fixes it.
+
 ## NVIDIA VFG
 
 NVIDIA VFG shares D3D12 buffers and fences with CUDA. Under Proton this fails
@@ -158,7 +180,8 @@ podman or docker): it builds both patched components in a throw-away Fedora
 container and installs them into a copy of the pinned GE-Proton at
 `$VEYRA_HOME/proton/GE-Proton11-3-veyra-vfg`. Later starts reuse it. This mode
 has its own prefix (`$VEYRA_HOME/prefix-vfg`), because Proton does not replace
-`d3d12core.dll` in an existing prefix; PS5 pairing is stored per prefix.
+`d3d12core.dll` in an existing prefix. User data is shared between the two
+modes, see "Settings and pairing".
 
 In Veyra choose "Frame Gen" → NVIDIA VFG → 2X.
 

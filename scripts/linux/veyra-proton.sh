@@ -118,6 +118,48 @@ if [ ! -d "$prefix/pfx/drive_c/windows/system32" ]; then
 fi
 copy_ngx
 
+# Keep user data in one place, outside the prefixes and the versioned app
+# folder, so that it survives a version change and is the same with and
+# without VEYRA_VFG:
+#   <prefix>/.../AppData/Local/Veyra  PS5/Xbox/Moonlight pairing (remoteplay/)
+#   <app>/runtime_local               Veyra settings, presets, playlist
+# Each location becomes a symlink into $VEYRA_HOME/user. Existing data is moved
+# there the first time; a second, different copy is set aside, never deleted.
+# The PS5 profile is DPAPI-encrypted, which in Wine is keyed by the user name
+# ("steamuser" in every Proton prefix), so it reads back in either prefix.
+share_dir() {
+  local here_dir="$1" shared="$2" seed
+  [ -L "$here_dir" ] && return 0
+  if pgrep -f 'veyra_qml_ui\.exe' >/dev/null 2>&1; then
+    say "Veyra is running; close it and start again to move $(basename "$here_dir") to $shared"
+    return 0
+  fi
+  mkdir -p "$(dirname "$shared")" "$(dirname "$here_dir")"
+  if [ -d "$here_dir" ]; then
+    if [ ! -e "$shared" ]; then
+      mv "$here_dir" "$shared"
+    else
+      mv "$here_dir" "$here_dir.local-$(date +%Y%m%d-%H%M%S)"
+      say "kept the previous $(basename "$here_dir") of this folder next to it; using $shared"
+    fi
+  elif [ ! -e "$shared" ] && [ "$#" -gt 2 ]; then
+    # First run of a new Veyra version: start from the newest older one.
+    # shellcheck disable=SC2012  # our own folder names, no newlines
+    seed="$(ls -dt "${@:3}" 2>/dev/null | head -n1 || true)"
+    if [ -n "$seed" ]; then cp -a "$seed" "$shared"; say "copied settings from $seed"; fi
+  fi
+  mkdir -p "$shared"
+  ln -s "$shared" "$here_dir"
+}
+share_dir "$prefix/pfx/drive_c/users/steamuser/AppData/Local/Veyra" "$VEYRA_HOME/user/LocalAppData-Veyra"
+if [ -z "${VEYRA_APP:-}" ]; then
+  older=()
+  for d in "$VEYRA_HOME"/app/*/runtime_local; do
+    [ -d "$d" ] && [ ! -L "$d" ] && older+=("$d")
+  done
+  share_dir "$app/runtime_local" "$VEYRA_HOME/user/runtime_local" "${older[@]}"
+fi
+
 if [ "$setup_only" = 1 ]; then
   say "ready: app=$app proton=$proton prefix=$prefix"
   exit 0
