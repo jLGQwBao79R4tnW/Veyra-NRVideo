@@ -1,5 +1,25 @@
 # 当前工作日志
 
+## 2026-11-13 SDR 截图 Alpha 与暗部量化修复（独立分支）
+
+基于公开 main 8332c8a8，在 fix/screenshot-alpha-quantization 修复 SDR 视频/采集截图：显式选择不透明 BGR PNG 编码；普通图片继续保留原 Alpha 策略，HDR JXR、处理 Shader、录制与呈现代码不改，无新增持续回读。原图 straight RGB 在 Pillow/WIC 一致，原始纯黑37像素；实际 WIC 8-bit 预乘/反预乘后为20.8582%纯黑，首次量化在该消费者转换中观察到。低 Alpha 的上游产生阶段未宣称定位。
+
+独立及完整工程入口均构建实际 sink/device/ring/ScaleBlit，RX9070XT上21项通过、0失败；旧保存路径4项不透明截图断言失败。完整QML播放器构建通过；ASUS 4KPRO采集、FSR 4.1.2及AMD NR实际F7输出3840×2160不透明PNG，反馈显示正常，WIC消费者往返RGB完全一致。最终复查通过截图8组、HDR合成GPU、文件图处理与正常/过载EOS；HDR display state/tuning在新临时目录通过。复现和验证边界见 `@tests/screenshot-alpha/README.md`。实际HDR采集截图、录制集成与可选串流未复测，不称全部功能已验。
+
+额外 ImageDimension --tiled-color 六例在本分支与未修改的同一上游基线均于图初始化报 invalid staged SR extent，逐例结果完全一致；尚未进入图片保存，本次不扩改该既有问题。仅公开经授权且无元数据的游戏裁剪对比图，使用Fork独立证据分支，截图、配置与日志原件不随代码提交。
+## 2026-11-17 Xbox concealed-frame recovery proposal
+
+Related #138: reject stream frames carrying FFmpeg corruption/error flags before
+publication, reuse Xbox history reset/IDR recovery, add an opt-in persisted Xbox
+software decoder workaround, and correct swscale output-height validation.
+Field replay and a locally patched 2.1.9 executable support the diagnosis;
+they are not a complete build of the new UI/source changes. Added a native
+software-scaling regression; native build/test and UI persistence checks remain
+pending. `python -X utf8 -B scripts/i18n/extract.py --check` reports no missing
+translations/placeholder problems; `git diff --check` passes. Details and
+explicit validation limits: [Xbox recovery](XBOX_STREAM_CORRUPTION_RECOVERY.md).
+No binary/runtime/configuration/credential changes are part of the contribution.
+
 ## 2026-11-03 RX7000补丁后worker退出：新日志与诊断更新
 
 用户veyra-qml(4).log与cache(1).zip表明NVAPI身份修复确实生效（m_gpuArch0x1b0），新失败是12:35之后三次worker管道中断。NGX已进入Small1920×1080网络建立，最后权重heap请求108.6MiB；不能凭末行认定显存不足或具体CUDA错误。当前只更新worker诊断：阶段/请求参数、CRT与Win32 stderr、Rust backtrace、普通未处理SEH独立记录；保持原Windows异常处理、不吞异常。算法/模型/共享GPU同步/主EXE/设置不改，附只读Windows1000/1001事件收集，不包数据库或模型。
@@ -1232,6 +1252,39 @@ ANR协作者于2026-11-13T15:49:32Z在Issue9明确禁止Beta第三方再分发�
 用户授权公开，发行7244307/产品f46df7f、EXEbf27ebed/PE2.1.6.0。NVIDIA/AMD公开完整包与应用/网络源码、SHA256SUMS已上传，源码Release先公开，应用v2.1.6随后设Latest；服务端大小/SHA、正文、标签、匿名HTTP200/ZIP前缀、摘要GET、两QR字节/各220及四固定源码链接核验。公开包无ANR资产：作者最新Beta禁止再分发；自写适配保留，当前本机完整ANR包/用户配置不改。两公开包重新解压最小PATH播放213/221帧、无ERROR，实际UI明确ANR不可用、回放/麦克风默认关、顶部开关/HDR折叠存在。旧2.1.5正文/标签/资产与源码SHA保持，29原树指纹保护。脚本/日志/失败边界/包SHA及清理详见RELEASE_2.1.6_EXECUTION_2026-11-13.md与reports/codex-release-2.1.6-20261113/FINAL.json；仅退役本轮验证副本，公开包/对应源码/build/证据保留。最后只追加本验收文档，不改tag/二进制；未群发、未关机。
 
 
+## 2026-11-14 NVIDIA G-SYNC 程序配置入口与提交前审查
+
+全局已允许窗口/全屏但程序专用范围仍为仅全屏时，现有VRR开关不足以解释固定最高刷新的现象。新增专业显示页“检查／修复／恢复原设置”，显式后台操作仅处理当前完整路径的自定义单程序配置及两个范围ID；备份、回读、继承恢复与冲突拒绝保护原设置。原有同步、NR/SR/FG、录制、HDR及优先级逻辑不变；复用VRow/VButton/Theme，窄面板按钮自动换行，增加三语译文。显示器查询处只修正“永不修改驱动”的绝对日志措辞。
+
+提交前审查修正：未完成驱动读取时不将默认结果误判为有效配置；恢复成功但记录删除失败时允许再次清理；驱动接口与互斥量匹配后台任务的进程生命期。新增可独立运行的MSVC2022/Qt6.8.3检查与GitHub工作流，控制器通过链接期模拟驱动验证存储失败、权限失败、恢复重试及独立修改保护，不接触真实配置。
+
+本轮未执行本地编译，按用户要求将后续编译检查交由GitHub环境。当前四语离屏界面各9项、共36项通过，包含初始化无驱动调用及280/360/520宽度；相同宽度的前后界面预览无QML警告，复用原样式。翻译2867项／三语缺失0／占位符0；EngineController、PresentSink、呈现setter、录制桥接与公共样式组件无逻辑改动。前阶段同一策略头文件的62项断言和只读真实配置核对不等同于本轮完整产品构建；新增控制器测试与远端CI结果须在执行后记录。真实驱动写入／恢复与GPU性能尚未验收。
+
+当前分支codex/vrr-profile-button-20261114；实现与操作见NVIDIA_GSYNC_PROFILE_2026-11-14.md，独立验证入口tests/vrr-profile。所有本机日志、界面图、依赖与诊断记录留在任务目录，不随PR提交。提交状态以实际PR链接和后续记录为准。
+
+2026-11-14（Claude）合并PR #104/#108并处理Issue #107：分支claude/merge-pr104-108-20261114（main 20955b5），PR #108 G-SYNC配置按钮8efd5ac、PR #104其他虚拟桌面窗口捕获043615e，去掉PR #104未运行过的分支打包脚本89e75a8，无冲突，词库2874条缺失0。#107本机复现：60fps片源WGC采集关NR，同卡/跨卡（AMD核显运算）均60–61帧/秒，跨卡只增延迟（1440p约13ms），“关NR只有50多”未复现，两块NVIDIA与60Hz显示器未验证。改动：按显示路径找出驱动显示器的显卡，采集日志记gpu path，跨卡时屏幕捕获对话框提示并建议把显示器接到处理卡；不改帧路径和默认值。构建通过，QML 208/0/0，界面合同、G-SYNC策略62项、PR #108独立检查6/6通过；屏幕采集31/6，6项与改动前EXE同环境同像素失败（HDR桌面颜色检查），新增3项通过。详见docs/MERGE_PR104_PR108_ISSUE107_2026-11-14.md与reports同任务FINAL.json；仅本地，未push/未在GitHub合并或回复。
+
+2026-11-14（Claude）FSR 4 ML补帧给RX 9000用户默认启用：用户要求“让9000用户用上”。FSR 4 ML（AMD ML帧生成，SDK 2.3.0 提供方4.0.1）2.0.0起已可在RX 9000手动选择；本轮RX 9000新配置默认FSR 4 ML，不可用的已存后端优先改FSR 4 ML；ML不可用/失败时实时预览改用FSR 3.1保持2X并提示（不再关闭补帧或整套回退），导出仍不替换后端；菜单去“实验”，提示写明不可用时改用3.1且未经实卡验证。修复合同/ANR设置/界面合同、QML、FSR切换与引擎级fsr4-fallback在本机RTX 5070通过（只验证回落，ML本身未实卡运行）。详见docs/FSR4_ML_RX9000_2026-11-14.md与reports同任务FINAL.json；分支claude/fsr4-ml-rx9000-20261114未合main/未push。
+
+2026-11-14（Claude）AMD AMF FRC补帧接入：用户确认A卡视频补帧是AMD AMF FRC并要求接入。下载AMF SDK v1.5.3头文件（MIT，57文件约0.6MB）到deps/amf-sdk-1.5.3-20261114；本机核显（RDNA2 2CU，AMF运行时1.4.37）实测FRC每帧给出前后两帧正中的中间帧。新增AmdFrc后端（2X，只在AMD显卡且System32有AMF运行库时可选）：真实帧复制进AMF输入贴图→AMF自身队列插帧→队列等AMF栅栏后复制回补帧缓冲，无CPU等待；设置/预设/节点/状态/组件页/导出/词库5条同步，不改默认。详见docs/AMD_AMF_FRC_2026-11-14.md与reports同任务FINAL.json；分支claude/amf-frc-20261114叠在FSR4分支上，未合main/push。
+## 2026-11-15 采集录制与本机监听解耦
+
+用户截图反馈2.1.6关闭监听就录不到采集卡音频。对照2.1.5/6，渲染取声和采集PCM链路没改，原“不监听”实际关闭了音频输入；不把未复现的版本回归归咎于麦克风。独立codex/capture-record-audio-20261115基于main2f0e499：输入选择与本机监听拆开，captureAudioMonitor保存/启动/实时/恢复/重连生效，录制/回放仍在增益前取声，不自动选输入；三处共用开关与四语说明同步。
+
+585项构建305.9s、翻译2876/0/0；生产CaptureAudioSession零增益220块：实际输出210240样本全零，取声峰值0.25，双消费者52800/105600帧且时间戳单调。缓冲37/0、UI合同、Quick退出0（未输出项数不伪报）、四语实际开关/保存/重启及三组6个录制/回放MP4独立解码/频谱通过。测试stage先漏QtTest DLL、再漏qml-tests，失败回执保留，补齐后Quick47.17s退出0。真实Elgato/其他GPU/无输出端点未验，合成麦克风不冒充实物。执行命令、详细边界见docs/CAPTURE_RECORD_AUDIO_2026-11-15.md，所有输出E:/项目/Veyra下codex-capture-record-audio-20261115任务；最终包/源码/SHA见reports同任务FINAL。未合main/push/Release/关机。
+
+交付收尾：产品dfa2328/EXEbe83186d，完整NVIDIA ZIP725809972字节/SHA69977c0e…，精确源码ZIP/SHA256SUMS与独立手动入口齐全。1664包文件逐SHA、97原DLL、88着色器与最小PATH新配置冷启动176真实帧/0错误通过。封包首轮保护拦截PR104/108新增QML，按精确源码差异补全NvidiaVrrProfileRow/qmldir后通过，拒绝记录保留；不是忽略保护继续打包。打包与冷启动命令/失败/结果见reports同任务package.py、cold.py、PACKAGE/COLD/FINAL.json及执行文档末节。最终保留当前app/build/完整包/对应源码/必要证据，不改真实配置/主线/已发布包，不关机。
+## 2026-11-14 日落配色与经典切换（Claude，未提交）
+
+分支 claude/dusk-palette-20261114（main 20955b5）。按用户参考 GTA6 封面的要求，新增日落配色（默认）：靛紫底、日落渐变强调色、暮色背景图；设置 → 外观 → 界面配色可切回经典，经典取值与原型完全一致。Theme 令牌、VAccentFill 渐变填充、shade() 着色、make-backdrop-dusk.py 背景图、palette 偏好与 6 条词库。QML 199/0/0、界面合同 3/3、翻译 0 缺失；两套配色真实程序截图（软件与 GPU 绘制）及手动入口冒烟通过。详见 docs/DUSK_PALETTE_2026-11-14.md 与 reports/claude-dusk-palette-20261114。
+
+同日追加：日落配色下 Logo 换成用户提供的霓虹渐变像素手柄（原图存 assets/veyra-logo-dusk.webp，make-logo-dusk.py 生成同画布的 logo-dusk.png），首页/顶部栏/关于三处同位置替换，首页呼吸光改淡粉；经典仍为原白色 Logo；程序文件/任务栏图标未改。QML 199/0/0，两套配色截图核对。
+
+同日追加：用户觉得日落配色饱和度偏高，色相明度不变下调约1/4（底色/卡片/背景图×0.72按亮度保持，强调色与渐变HLS×0.8，shade偏移与首页呼吸光同步）；QML 199/0/0，前后对比图见reports同任务dusk-saturation-before-after.png。
+
+## 2026-11-15 日落首页字标、启动动画与启动音乐（Claude，未提交）
+
+用户要求日落主题下首页换成其"Veyra NR"字标（饱和度稍降），并加入场动画；随后参考其GTA6 Logo出场录屏、要求去塑料光效、拆字做视差、动效更炸，最后要求BGM随启动卡点播放一次、打开任意播放源自动暂停、角落可关声音。同一分支/工作树/build继续：make-wordmark-dusk.py生成色度×0.8字标、柔光与三层视差（尾巴边缘填色抠出、被挡处按纸片调和补画）；新DuskIntro.qml 3.26s卡BGM实测拍；新StartupMusic（Media Foundation媒体引擎纯音频）读程序目录media/startup-music.mp3，动画以音乐位置为时钟；首页右下角静音按钮与设置→外观"启动动画""启动音乐"。BGM来源/授权未知，不进Git/包，仅复制到测试stage。EXE9a27ebb7…；QML199/0/0、合同3、i18n2859、真实程序14场景（静音播放）通过，同步0–1ms。测试中BGM曾意外外放约7秒、测试窗被真实点击一次。记录见DUSK_PALETTE_2026-11-14.md末节与reports/claude-dusk-intro-20261115/FINAL.json；未合main/push/发布。
 ## 2026-11-15 GitHub主页与教程入口
 
 用户要求X/YouTube作者主页与英中教程，放README顶部及Release底部。账号从现有Preferences.cpp核对为x.com/likely2002、youtube.com/@Likely7Ai；教程按用户原地址，英文保留t=324s，中文BV1KvsE6bEPw。README英/中/兼容入口三份及RELEASE_SUPPORT模板复用CREATOR_AND_TUTORIAL_LINKS块；当前v2.1.6应用/源码两Release底部同步添加。远端main有独立star-history提交、本地main另有Claude未发布功能，故从nrvideo/main独立docs分支施工，仅推文档，不携带未发布引擎改动。站点抓取受YouTube节流/X403/B站限制，不把HTTP状态冒充账号正确；主账号以用户既有程序常量、教程以本轮明确链接为准。原Release正文/资产/tag和README已归档至E:/项目/Veyra/{archives,reports}/codex-creator-links-20261115，实际远端验证与资产未变结果见FINAL.json。无程序/运行库/标签/包替换，不群发、不关机。
@@ -1240,3 +1293,176 @@ ANR协作者于2026-11-13T15:49:32Z在Issue9明确禁止Beta第三方再分发�
 ## 2026-11-15 英文教程改为从头播放
 
 用户明确纠正英文教程应从零开始。移除英文YouTube链接t=324s与05:24标签，同步三份README顶部、作者/教程标准块、RELEASE_SUPPORT及当前v2.1.6应用/源码Release底部。执行：py -3.11 -X utf8 -B -I E:/项目/Veyra/reports/codex-creator-links-20261115/from-zero.py；git diff --check、远端README内容、两Release正文与原资产/标签/二维码保护检查，实际发布结果见reports/codex-creator-links-20261115/from-zero/FINAL.json。仅文档和Release正文，不携带本地main未发布改动。
+## 2026-11-15 2.1.9整合、区域可视编辑与启动音乐
+
+用户授权本地main整合并跳到2.1.9，BGM仅进运行包。隔离codex/integrate-2.1.9-20261115基于main2f0e499，原工作树HEAD/脏文件SHA与变动快照在reports/archives同任务；Claude日落81498ed、AMF/FSR4 b31d536、录音10e502e、浏览器挂起61c9f9c及nrvideo/main文档均已并入整合分支。WORKLOG冲突保留双方，Preferences保留录音监听、启动动画/音乐全部开关。暂停的四分支不并。
+
+全效果剔除持久红框、选中拖动、仅释放提交、独立显示层；音乐独立片头播放一次，媒体打开意图/手动关闭立即停止，加载前取消也不能复活。原曲SHA3005aa60…1847011字节留deps，不进源码。构建与测试命令：scripts/acceptance/build-recording-handoff.py --task codex-build-2.1.9-20261115 --root E:/项目/Veyra/worktrees/integrate-2.1.9-20261115 --label 2.1.9 --jobs 2 --option VEYRA_AMF_SDK_ROOT=E:/项目/Veyra/deps/amf-sdk-1.5.3-20261114 [本次目标]；reports同任务qa.py stage/cpu/music/mask/resize/amf、fg.py、regress.py、visual.py/verify_visual.py。实际命令参数在这些脚本和构建receipt。测试、日志、临时文件均E盘同任务目录。
+
+209/0/0 Quick、原曲115.826秒自然结束（全程静音）与四种取消、四语实际区域编辑、Windows真实鼠标窗口/全屏各拖一次及截图/14帧录制独立检查通过；XeSS2X/4X各六次WGC resize、FSR4回退/后端切换、AMF核显45/45中间帧/最大误差0.5px/debug0、全效果剔除GPU、静音PCM双消费者/回放缓冲/呈现工作线程通过。失败构建、按钮重叠与修复、运行中stage拒绝和报告解码错误保留，详见BUILD_2.1.9_2026-11-15.md。最终包/源码/main提交/冷启动及清理以reports同任务FINAL.json和收尾记录为准；不push/Release/关机。
+
+2.1.9封包收尾：main已快进08edece，产品EXE5363b83e…/PE2.1.9.0；两ZIP分别730927504与721921977字节，SHA d365cd7d…/940a2715…；源ZIP0b5dd8ac…，不含MP3/DLL/LIB/PDB。两包1687/2311文件、97/90原DLL、88递归shader、ZIP CRC/逐文件SHA通过；BGM原字节及单独manifest均已封入。NVIDIA/AMD各首页和视频四次最小PATH冷启动退出0/无错误，片头完成后音乐继续，视频入口音乐未出声就停止，分别180/183真实提交帧。冷启动首轮断言误用ended（实际finished），改报告后重跑通过；无代码变更。脚本package219.py/cold219.py/merge_main.py/finalize.py及PACKAGE/MAIN/COLD/FAILURES/CLEANUP/FINAL在reports同任务。包对应源码08edece，后续提交仅收尾记录。全程无push/Release/关机。
+## 2026-11-15 2.1.9角落静音误存永久关闭
+
+用户反馈第二次启动无音乐。manual-NVIDIA原日志14:46:18.304停止7.33秒、18.514写introMusic=false、18.515记录stopped(button)，后两次新进程无源且从0秒停止，确定为本次按钮误写长期偏好，并非曲目只允许终身播一次。codex/startup-music-session-stop-20261115基于main d9e7c11：角落按钮仅stopStartupMusicForSession，不写偏好；设置开关保留长期保存，四语提示明确区分。按已证实日志只恢复manual-NVIDIA被按钮误写的false，原文件与证据归档，未全局重置用户偏好。
+
+同一配置8次实际启动（临时停止/重启两轮、设置关/重启关、设置开/重启开）退出0/无错误、偏好true/true/true/true/false/false/true/true；提前静音。命令py -3.11 -X utf8 -B -I E:/项目/Veyra/reports/codex-startup-music-restart-20261115/{prepare.py,restart.py}，记录RESTART.json/PREFERENCE-REPAIR.json；i18n提取检查0缺失/0占位问题。源/包/缓存/日志均E盘，C++算法及运行组件不改，EXE因内嵌翻译资源重链；封包保护拦截未同步的旧QA EXE，更新后复测，不绕过校验。后续本地main、两完整包和原入口原子替换/冷启动结果见该任务FINAL.json。无push/Release/关机。
+
+启动音乐跟进交付：产品b430d98，EXE因内嵌词库资源重链c8a53dc7…，新EXE下8次实际重启与两包四次冷启动通过。NVIDIA/AMD ZIP分别730929571/721924034字节；两包及对应源码/SHA已逐文件核验后原子同步原2.1.9下载路径和app，原测试启动器仍使用已修复的manual-NVIDIA配置。全部DLL和BGM原件不变，源码无MP3/DLL。相关旧Main/词库/manifest及之前摘要/报告归档archives/codex-startup-music-restart-20261115，不覆盖其他任务或用户设置。原日志已明确的按钮false修正true；设置页明确的长期关闭未全局迁移。包校验第一次正确拦截旧QA EXE，按实际资源重链更新并重测后封包。实际部署变更文件见该任务DEPLOY.json与FINAL.json；不push/Release/关机。
+
+## 2026-11-15 公开发布2.1.9《迎接GTA6降临》
+
+用户确认测试正常并明确授权GitHub发布、全量更新公告、最新12群原图和1000字以内群公告。发行分支codex/release-2.1.9-20261115基于main ca614ef，远端main c327d45；已归档2.1.6两Release正文/标签/资产身份、本地最终交付。仅发行文档/README/二维码/包元数据，不重编译已验EXEc8a53dc7，产品b430d98生产源码不变。双语更新、条件/边界、对应源码/固定依赖文档齐全；原图复制12群，11月22日前、两QR各220、作者/英中教程保留且英文零起点；群公告669字符。
+
+脚本reports同任务init.py/docs.py/freeze.py及后续package/upload/verify，全部输出E盘同任务目录。先草稿上传与服务端SHA检查再公开/Latest，音乐不进源码，ANR禁止Beta再分发不扩大。远端验证及清理最终以FINAL.json/发行执行记录为准，不群发、不关机。
+
+2.1.9正式发布并核验：https://github.com/Likely7/Veyra-NRVideo/releases/tag/v2.1.9，发行tag d442b4e、实际产品b430d98、EXEc8a53dc7/PE2.1.9.0；两完整包/两源码/SHA上传，服务端digest/大小、匿名入口、Latest、正文/README/12群原图/双码各220及零起点教程通过。音乐只运行包、无ANR、DLL/88shader和四次解压冷启动通过，原2.1.6两Release保护通过。脚本路径/失败与纠正/实际资产SHA见RELEASE_2.1.9_EXECUTION_2026-11-15.md与reports同任务FINAL。发布后仅追加验收文档，不改tag/二进制/已发布ZIP；群公告669字符提供用户自行发，不群发、不关机。
+## 2026-11-15 README顶部替换日落新Logo
+
+用户要求用新Logo替换README顶部老图。README.md/README_CN.md现有顶部手柄图改为已发布的assets/veyra-logo-dusk.webp，保持原140/160宽度和位置。英文兼容README_EN.md原无Logo且指向README.md，保持该入口。无图像重绘/裁剪、无程序/发行包/版本标签改动，作者/教程及12群/赞助区保持。命令git diff --check、main快进/推送nrvideo main，远端README与Logo原字节验证结果见E:/项目/Veyra/reports/codex-readme-dusk-logo-20261115/FINAL.json；不关机。
+
+## 2026-11-15 README改用用户指定的Veyra NR动态字标
+
+用户纠正：要的是附图Veyra NR字标，要求录制软件里的动效GIF。隔离分支codex/readme-wordmark-gif-20261115，基于62d8f56；README.md/README_CN.md顶部现改为assets/veyra-wordmark-dusk.gif、宽480。英文兼容入口、教程零起点、作者主页、12群与赞助各220保持。
+
+直接用已发布2.1.9 EXE（c8a53dc7…）加载原封未改的DuskIntro.qml，通过组件现有ms时钟与Qt grabToImage采集1–2640ms、25fps共67张1280×800帧，未重制动画。仅私有QA副本注入采集器，独立配置/缓存/日志，无media目录且introMusic=false；供体EXE/Main/组件SHA不变，进程退出0、QML错误0。FFmpeg裁剪/轻度空间降噪以压缩颗粒/缩到480×390，保留入场和日落，完整字标停留1秒后0.4秒淡出，循环起点放完整字标；最终GIF 6497964字节、102帧、4.08秒、无限循环，SHA256 db0d89d34a1716e055d29a146a47dee113a78cae27caad9b01da1a227245b0bb。逐帧解码、首帧/过程接触表与循环时长检查通过。额外Pillow无损重编码候选未通过像素一致性检查，未采用，原FFmpeg成品保留。
+
+实际命令：py -3.11 -X utf8 -B -I reports任务目录/capture.py、encode.py及git diff --check；脚本、FFmpeg完整参数、CAPTURE.json、ENCODE.json、画面证据与远端核验FINAL.json统一在E:/项目/Veyra/reports/codex-readme-wordmark-gif-20261115。采集副本tests同名、缓存tmp同名、日志logs同名。本轮只更新文档展示资产，不重编译、不改版本标签或已发布包；按用户README更新授权合main并推送nrvideo main，不关机。
+
+## 2026-11-15 README字标改为仅文字与太阳、透明背景
+
+用户要求去掉GIF背景，只留文字和太阳。分支codex/readme-wordmark-transparent-20261115基于87f3d2c，私有展示QML只保留已发布DuskIntro原动画方程、原字标三层及条纹太阳，去掉天空/海面/倒影/地平线/光晕/颗粒/火星，不改软件中的QML或其原件。仍通过2.1.9 EXE、独立配置且禁用音乐采集67张RGBA帧；供体EXE/Main/DuskIntro SHA不变、退出0、QML错误0。
+
+生成assets/veyra-wordmark-sun.gif替换README.md/README_CN.md顶部引用，480×364、133帧、6.28秒循环、3441610字节，SHA256 7e87d95d4366f6dd319fdee3c2e55b06ce151cc42afda4251bf03e5974cef75d。原入场倒放再正放，首帧完整字标停留1秒；采用全画布透明清除，每帧至少91089个透明像素。初次Pillow delta编码在全透明帧写入重复文件头，被逐帧/时长校验拦截；改用其帧编码器逐张写完整画布并显式disposal=2后，133帧全部像素与时序一致通过，不带底色、不留残影。GIF只有二值透明，边缘按alpha128量化；深浅背景实际解码预览已检查。旧有背景GIF在Git历史中保留，当前树移除；作者/零起点教程/双码各220及远端并发的Trending/下载数改动保持。
+
+执行命令：py -3.11 -X utf8 -B -I reports任务目录/prepare.py、capture.py、encode.py、verify.py；git diff --check及main快进/推送nrvideo main。脚本/命令参数/CAPTURE.json/ENCODE.json/深浅底预览/独立FFmpeg解码与远端逐字节验证FINAL.json统一在E:/项目/Veyra/reports/codex-readme-wordmark-transparent-20261115；私有app/profile在tests同名、缓存tmp同名、日志logs同名。仅文档展示资产，不重编译或改Release包/标签，不关机。
+
+## 2026-11-16 更新13群二维码
+
+用户提供13群新码并要求替换。隔离分支codex/community-group13-20261116基于8a690f5；原PNG直接复制到docs/images/community/group-13-20261116.png，360×544、67186字节，SHA256 4034bbef9ad68d535ce1f3a43ef28caad4d5a66bac8094df60250b42f2486b6f。PNG校验及原图逐字节一致通过；普通OpenCV解码未成功，改用QRCodeDetectorAruco对原图解码成功，无需修改图片。群号/图片原标注有效期同步为13群、2026-11-23前。
+
+更新README.md/README_CN.md、docs/RELEASE_SUPPORT.md与2.1.9更新说明；双码各220、赞助原图、透明Logo、作者主页及零起点教程保持。对应同步当前2.1.9应用与源码两个Release正文，群码链接固定到本次提交的新原图；仅更换群码/群号/有效期，保留源码ZIP原含12群图的事实描述，不改标签或已发布下载文件。GitHub连接器负责读取，缺少Release修改接口的部分用gh api PATCH body字段，更新前备份并核对正文，更新后检查完整正文和资产ID/大小/摘要保持。
+
+命令：py -3.11 -X utf8 -B -I reports任务目录/prepare.py、releases.py及verify.py，git diff --check、main快进并push nrvideo main。原正文、具体PATCH JSON、元数据与前后证据/远端README/双码实际可访问性记录在E:/项目/Veyra/reports/codex-community-group13-20261116/及FINAL.json；其他产物不新建、不重打包、不关机。
+
+## 2026-11-17 虚拟摄像机施工与用户手动测试入口
+
+用户要求OBS类虚拟摄像机输出处理后完整画面，开关紧邻录制。隔离分支codex/virtual-camera-20261117，基线bf596e1；施工方案docs/VIRTUAL_CAMERA_PLAN_2026-11-17.md。适配固定OBS/libdshowcapture源码，独立Veyra设备身份和当前用户32/64位注册；三槽GPU转换/异步读回，只在开启时运行，SDR NV12输出及HDR转SDR边界，不含音频或XeSS显示端生成帧。
+
+本轮产品和摄像机两架构构建通过，最近构建命令为scripts/acceptance/build-recording-handoff.py --task codex-virtual-camera-20261117 --root E:/项目/Veyra/worktrees/virtual-camera-20261117 --build-dir E:/项目/Veyra/build/codex-virtual-camera-20261117/app --label 2.1.9-virtual-camera-test --jobs 2，具体目标/日志见logs同任务build-20261117-075700/。真实DirectShow原生消费者32/64位及4K、I420/YUY2转换、源退出黑帧、慢消费者时间戳共10项通过；共享队列x64 30项通过。首次仅出两帧的问题为绝对参考时钟误用为相对流时间，修正后通过；慢消费者诊断发现CaptureGraphBuilder自动插SmartTee/FIFO，改直接连接图检验来源背压，并保留真实时钟。最终产品新增分配器Stop取消修正和GPU颜色测试目标已构建，相关完整复测尚待完成。
+
+实际产品验证暂停后开启、1280×720小窗口/最小化持续输出、停止源变黑；第一次测试脚本退出等待ACK错误导致报告异常，产品本身正常退出0，修正测试退出逻辑。隔离OBS 33.0.1真实摄像机源收到1920×1080处理结果：灰阶均值95→曝光调整后180.269，缩小Veyra窗口后截图SHA完全相同，关闭黑帧、重新启用恢复；OBS.json、OBS-DEVICES.json与截图在reports/tests同任务。尚不能据此声明实际产品4K、HDR、并行录制/回放、四语窄布局和其他GPU已验收。
+
+用户按Esc终止上一轮电脑操作后已停；本轮用户明确要求拉起手动测试，执行reports同任务manual-launch.py，从现有审计供体准备独立manual-app，以最新构建EXE/两架构自有DLL/QML/89 shader替换，保留供体原件，独立manual-profile且关闭自动恢复/预热/启动音乐。PID和SHA见reports同任务MANUAL-LAUNCH.json；窗口Veyra 2.1.9-virtual-camera-test已通过computer-use观察并置前，顶部录制旁摄像机开关可见。入口tests/codex-virtual-camera-20261117/启动虚拟摄像机测试.cmd；用户正在测试，不关闭或覆盖该实例。当前源码未提交，未合main/推送/发布；完整验收与正式封包未完成。
+
+### 2026-11-17 手动测试采集卡无声：独立配置修正与用户确认
+
+用户反馈测试版Veyra本身采集不到声音，正式2.1.9正常。先核对manual-profile与manual.log：原测试配置绑定MCS T911-MIC（MIC+LINE IN），系统另有T911-HDMI输入，音量1/监听默认开启，输出MOONDROP MM3A。输入日志存在非零convertedPeak，不能将“初始化成功”或“选了MIC”单独当作回归已排除。一次WASAPI 0x88890004设备失效已由原恢复链路重连；本次未改此逻辑。
+
+为分开验证，先对固定带声视频实测：正式2.1.9和测试版Windows会话峰值分别0.050401与0.050401，摄像机开/关均非零；此结果只覆盖文件播放，不作为采集卡验收。其首轮在WASAPI尚未创建会话时过早测量，等待真实音频就绪后重测通过。接着同一实卡3840×2160 NV12 60、同一明确T911-HDMI稳定设备路径依次实测：正式版1188输入块、输入峰值0.06759、Windows会话峰值0.009717；测试版1191输入块、输入峰值0.20806、会话峰值0.040118，摄像机开启后0.178491、关闭后0.182931，均0错误。素材为实时信号且测试中音量被调整，这些峰值仅证明输入/输出非零，不作跨版本性能、音量或画质比较。
+
+备份manual-profile的capture-preferences.v1与qml-preferences.v1.json到reports同任务audio-profile-before-20261117-090130，再仅将已验证的T911-HDMI稳定路径写入该测试配置、确认captureAudioMonitor=true，保留用户音量和视频格式。重新打开测试版采集卡对话框供用户连接；用户实际复测明确回复“现在有声音了”。本次症状经测试配置修正恢复，没有为此修改采集音频引擎或正式版配置；不将其扩大为所有音频故障均已排除。该实例留给用户使用，不停止/覆盖。
+
+命令/证据：reports/codex-virtual-camera-20261117/audio-probe/build.py（只读Windows端点/会话静音、音量、峰值；无系统设置修改）、audio-ab.py、capture-audio-ab.py、fix-manual-audio.py、manual-launch.py --capture-dialog；AUDIO-AB.json/CAPTURE-AUDIO-AB.json/AUDIO-MANUAL-REPAIR.json；日志logs同任务。临时C++探针首次NOMINMAX缺失已修。未保存采集卡声音内容、未修改默认设备/驱动/系统音量、未合main/推送/发布。虚拟摄像机其余最终验收及正式封包仍按施工方案待完成。
+
+### 2026-11-17 OBS列表缺摄像机：管理员权限兼容已修复
+
+用户报告OBS列表没有设备。现场两个OBS32.1.2日志均Running as administrator:true；HKCU两架构设备/模块键完整，普通FFmpeg仍能枚举Veyra，之前仅普通OBS33.0.1通过，未覆盖用户权限组合。新增静态CRT独立veyra-camera-setup.exe与设置内安装/修复/卸载；载荷SHA嵌入构建，runas由Windows处理管理员确认，不修改UAC/OBS/驱动/其他相机。安装目录C:/Program Files/VeyraVirtualCamera（此为本功能实际安装的系统组件，不是研发临时产物），散列版本目录中仅自有x64/x86 DLL、三份许可和安装验证JSON；管理员/系统拥有和写入，Users仅RX；验证不是reparse且DACL受保护。成功后清除本用户旧覆盖，正常Veyra保持普通权限并使用machine注册；安装失败回滚本设备注册。
+
+构建通过：logs同任务build-20261117-093030。setup-preflight.py验证原件成功、未授权普通进程安装返回740且注册不变、隔离篡改自有测试DLL返回CRC23；预检脚本首次ctypes未声明伪句柄位宽已修。安装经Windows runas完成且用户明确回复“已确认Windows管理员安装”；退出0，系统文件SHA与构建相同，受保护ACL O:BAG:BAD:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;0x1200a9;;;BU)。安装程序在其真正管理员上下文实际枚举并绑定本设备，install-result.json记录成功，HKLM两架构键及文件已核对。源码首次copy函数与std::filesystem::copy ADL冲突已更名copySecure，保留失败日志build-20261117-092406。
+
+实际管理员OBS33.0.1测试通过：原生源宽高3840×2160，Veyra窗口1100×800，保存源图均值95；关闭黑帧均值0，重新启用源图SHA与之前完全一致。独立配置无麦克风/桌面音频源，原OBS配置不改。日志与OBS-ADMIN.json/OBS-ADMIN-DEVICES.json在reports同任务，截图tests同任务obs-admin-captures。该QA OBS在清理前已退出或无法查询，未停止用户OBS；随后CIM已确认原QA PID不存在。另补跑产品GPU转换149项/9组SDR、scRGB、PQ、奇数尺寸、线性/有界立方恢复尺寸、丢弃命令/重启，debugErrors=0，见GPU-COLOR.log；不将此算其他GPU或物理屏幕延迟验收。
+
+更新测试入口至tests/codex-virtual-camera-20261117/manual-app-system，显示2.1.9-virtual-camera-fix，继续使用manual-profile保留已确认HDMI音频。当前PID见MANUAL-LAUNCH.json；computer-use已观察用户连接T911、3840×2160/60 FPS且虚拟摄像机开关亮起；manual-console.log明确registration=machine与NV12 3840×2160。用户自己的管理员OBS32.1.2随后已实际选择Veyra Virtual Camera，证据C:/Users/123/AppData/Roaming/obs-studio/logs/2026-11-17 09-42-51.txt的09:43:04.308，摘录回执USER-OBS-CAMERA-RESTORED.json。保持该Veyra和用户OBS运行。
+
+当前修复仅本地分支，未合main/推送/Release；其余长期/并行录制回放、四语窄布局及不同硬件最终验收仍以计划待办为准，不称完整发行已完成。安装授权与实际设备恢复均已具体核对，不再以“普通权限可用”替代管理员验收。
+
+### 2026-11-17 用户OBS画面不及本地流畅：限帧容差修复
+
+现场OBS32.1.2的09:42:51日志：60/1 FPS、NV12、源关闭缓冲；09:43:04源3840×2160@60，09:44:53改6144×3456@60，画布与输出2560×1440。录制设置NVENC AV1/CQP16/P7/HQ/全分辨率多次编码，未发现能证明编码/渲染过载的统计，不将输出/绘制总帧数差值当作掉帧数。Veyra曾本地提交约119FPS而摄像机60，之后60→30与图内2X稳态约60；6K图创建约18.7秒是重建过程，不当作稳态卡顿证明。
+
+确认VirtualCamera::record严格now<nextDue会舍弃轻微提前到达的源帧。只在摄像机限帧加入interval/4到达容差，与现有LiveRecorder一致；不加深队列、不改音频/SDK/DirectShow DLL或系统安装。GPU回归新增真正逐帧变化640×360纹理，59.94 Hz输入、±0.75ms交替抖动，独立读取NV12确认变化。受控旧版120张仅接收/发布93，修复120/120，读取初始帧加120变化帧，三槽资源丢帧0，523项/调试错误0。普通Sleep首版夹具受15.6ms计时粒度影响，曾110/115接收且读者漏采；修正为高精度waitable timer后重新对照，保留GPU-CADENCE-COARSE-TIMER.log与前后日志，不以首版夹具的重复率作为结论。名义60 Hz另一次受控旧版118/120、修复120/120，只说明不同相位下影响程度不同。
+
+命令：build-recording-handoff.py --task codex-virtual-camera-20261117 --root E:/项目/Veyra/worktrees/virtual-camera-20261117 --build-dir E:/项目/Veyra/build/codex-virtual-camera-20261117/app --label 2.1.9-virtual-camera-fix --jobs 2 veyra_virtualcam_gpu_tests veyra_qml_ui，最终构建5.0秒，logs同任务build-20261117-095913。reports同任务gpu-check.py，最终GPU-CADENCE-5994-AFTER.log；qa.py refresh和cadence-product.py实际产品动态1080p60→已注册DirectShow摄像机→FFmpeg读取360帧，299稳态相邻对零完全重复，见CADENCE-PRODUCT.json/log。此为FFmpeg消费者短测，不冒充用户OBS/实卡/6K负载/其他GPU验收。
+
+更新现有manual-app-system的主EXE为8506a1b43ef8d0306d23965cb41f22e58eb3b702b6f292301182862ce5bd487d（原实例已退出才替换），保留manual-profile及已确认HDMI音频。系统x64/x86摄像机模块不变，不重新触发管理员安装。建议Veyra最终输出4K、摄像机60、OBS自定义4K60/NV12/709/局部；OBS画布/输出按实际直播目标，缓冲自动/启用与关闭实测平滑性/延迟取舍。当前仅本地分支，未合main/推送/Release，也不自动修改用户OBS配置。
+
+
+## 2026-11-17 虚拟摄像机3X/4X直播卡顿修复与带摄像机的2.1.9本地包（Claude）
+
+用户反馈：软件里3X、4X或超过60帧时OBS明显变卡，30帧游戏2X正常、3X/4X卡，OBS采集改120也没用；要求修好并构建带虚拟摄像机的2.1.9版本，随后要求AMD包也弄好。在本工作树Codex未提交改动上继续，改动前快照reports/claude-virtual-camera-cadence-20261117/codex-snapshot。
+
+根因：摄像机模块按自身时钟取最新帧，与Veyra出帧拍频（重复/跳帧，3X/4X最明显，OBS设120时摄像机端仍按自身节拍）；Veyra端2ms轮询、按槽位而非录制顺序发布、产出上限60；OBS实测又发现模块自适应延迟每2秒下调2ms，送帧相位一直漂，扫过OBS取帧时刻即成串重复/跳帧，OBS对本设备默认不缓冲、每节拍只取最新一帧。
+
+修复：队列协议2（6帧有序环、序号、网格时间、写入时间、最多8个消费者帧率登记取最快）；CameraGrid按消费者帧率均匀挑帧并打网格时间、GPU栅栏事件唤醒、按录制顺序发布、帧率默认自动（30/60/120为上限）；模块按序每帧只送一次、延迟立即上调且600帧都富余2ms才一次下调、OBS进程内经libobs公开接口obs_get_video_frame_time/obs_get_frame_interval_ns把送帧放在两次取帧正中间、采集帧率为画布整数倍时按画布帧率送、样本时间按目标时刻、单调保护改+1（回推时间戳与原+一帧保护叠加会让带时钟下游在Receive里卡住送帧线程一帧，本轮测试中发现并修正）、送帧线程HIGHEST；设置页“更新组件”、自动帧率、“直播画面节奏”提示（输出帧率非直播帧率整数倍时，3X=90对60显示，2X/4X隐藏），四语译文；探针生产端改用协议2时钟。说明docs/VIRTUAL_CAMERA_CADENCE_2026-11-17.md。
+
+实测（本机RTX5070，1080p30纹理平移每源帧8px，按纹理互相关测位移）：便携OBS33.0.1非管理员、1080p60画布录像逐帧，修复前4X采集60为443步重复53/跳54、采集120为重复60/跳61/错帧107；修复后4X采集60/120、2X、缓冲开/关均全部均匀（443/443级），3X仅90→60固有2.67/5.33px严格交替；CPU全核满载437/441，剩余4步与Veyra自身满载时呈现卡顿对应（同条件普通优先级对照出现一簇送帧型错帧，单次对照仅作参考）。直连消费端实际程序4X→60/120、3X、2X均0重复、送达抖动0.2–0.3ms；合成8组0重复。回归：传输64/32位各73项、原生64+32位同时采集10项（含4K、ffmpeg两种格式、生产端退出黑屏、慢消费端）、GPU摄像机523项0调试错误、UI合同、QtQuick209/0/0、i18n三语缺失0（4条旧启动音乐遗留词条未动）。
+
+打包：test-packages/claude-virtual-camera-cadence-20261117。底包为已发布2.1.9两包，逐文件按发布ZIP核对后硬链接，改动文件一律新建；带本次EXE（PE2.1.9.0，导入表与2.1.9相同）、QML/i18n/89着色器、virtualcam/x64+x86模块与安装器、许可证与说明。NVIDIA ZIP 731459840字节SHA256 b34d3da3206b522b030244eff18089facbce8eecc8b026d554ea05ff2d9e10f9；AMD ZIP 722472974字节 ebf8943413cebd0ace05162a4248f0cb1561c8d946ba1baaeef3cd570095bc5e；源码ZIP（打包时工作树，未提交）7034a89223ef0a14ad96045ea23f3f3cb5dc264670cc0151d5c88ea77f3fe7da。AMD首次封装被本人脚本的exe白名单拦下（底包自带RX7000降噪worker），改为允许按发布ZIP核对过的底包exe后重封。两包解压后逐文件核对清单、最小PATH冷启动（主页0错误、视频178/177帧）；用解压包本身跑OBS：NVIDIA 4X采集60为440/440、采集120为443/443，AMD包FSR3.1 2X为444/444，OBS加载的模块SHA 725091b9…与包清单一致。启动入口test-packages同任务/启动2.1.9虚拟摄像机测试-NVIDIA/AMD.cmd（独立配置）。
+
+发现：releases/codex-release-2.1.9-20261115的NVIDIA发行目录package-manifest.json于09:42被reports/codex-virtual-camera-20261117/manual-launch.py经硬链接测试目录原地改写（candidate 2.1.9-virtual-camera-test）；其余1695文件与发布ZIP一致，AMD目录一致，发布ZIP与SHA256SUMS一致。未修改，待用户决定是否从发布ZIP恢复；本次打包不取该文件。
+
+收尾：测试中注册到当前用户的摄像机已删除，系统级v1-fd0d325098133a6999af7531未动（管理员OBS需在设置点“更新组件”并确认UAC）；解压校验副本与测试stage已删，测量证据保留在reports/logs/tests同任务。未提交、未合main、未push/Release。未验证：AMD/Intel实卡、用户5090/实采集卡/真实直播、管理员OBS加载新系统组件、Zoom/Teams/浏览器等消费端。
+
+
+## 2026-11-17 两个（虚拟摄像头）包追加到GitHub v2.1.9（Claude，用户授权）
+
+用户要求紧急把带虚拟摄像机的两个包发布到GitHub 2.1.9 Release并加说明；原两个包不删，新增两个在名字后括号“虚拟摄像头”。发布前从已测包重封发布版（releases/claude-release-2.1.9-virtual-camera-20261117）：除RELEASE_NOTES.md、GPU-PACKAGE.txt、package-manifest.json与两份release-runtime-manifest.json改写为“已作为v2.1.9附加下载发布”外，其余文件均为已测包硬链接并逐一核对哈希；两包解压逐文件核对与最小PATH冷启动通过（视频NVIDIA181/AMD188帧，0错误）。Likely7/Veyra-NRVideo的v2.1.9新增Veyra-2.1.9-virtual-camera-NVIDIA/AMD-win64-portable.zip与校验文件，显示名“Veyra-2.1.9-NVIDIA/AMD-win64-portable（虚拟摄像头）.zip”“SHA256SUMS（虚拟摄像头）.txt”，SHA256 NVIDIA 4e00e26197da82053d359dc0edec25c56876eae17a5a54789919b07ee445999a、AMD 6e962bc4c7298f04bfffea33edfd4fc4e4373a1435612d38b4cf7ec37c9eeb40；v2.1.9-sources新增Veyra-2.1.9-virtual-camera-source.zip（显示“Veyra-2.1.9-source（虚拟摄像头）.zip”，7034a892…）。两Release说明在最前加追加段落，原文保留（备份reports同任务github/）。服务端摘要/大小与本地一致、匿名下载可用；原两包、SHA256SUMS与Latest不变。首次上传v2.1.9时读取Release即EOF失败、未产生半截资产，重试成功。代码仍未提交、未合main、未push分支或标签；群公告未发。
+
+## 2026-11-18 全分支整合与项目整理（本地main）
+
+用户授权把Claude最新虚拟摄像机及各分支功能/修复并main并整理项目。inventory.py核对40个工作树/60个分支；main54aa357落后远端跟踪bf596e1三条已有文档提交，虚拟摄像机同树72文件未提交。原样提交740534e（Codex完整接入+Claude协议2/OBS节拍修复）后快进main，无代码冲突；checkpoint/pre-main-integration-20261118及checkpoint/virtual-camera-claude-snapshot-20261118留档。旧产品分支内容已入main，脏树产品文件另核对历史blob并查回放按钮、DLSS模型、精修光流等现实现，未将旧文件倒合；4条暂停/诊断/原型继续隔离。
+
+从唯一main源码全新构建10目标641步325.3秒，build-recording-handoff.py --task codex-main-integration-20261118 --root E:/项目/Veyra/worktrees/main-claude-anr-20261113 --label 2.1.9-main-integration-test --jobs 2，日志logs同任务build-20261118-003913，附加Win32测试目标通过。EXE6c1a1fc1…、89着色器逐SHA；回放37/0、修复合同328/0、时序/UI合同退出0、GPU摄像机523/调试0、x64/x86传输各73、QtQuick209/0/0，i18n缺失/占位符0。实际新程序DLSS4X→60/120分别420/839稳态样本，0重复/倒退；摄像机+录制+回放同时开启，两份1080p文件267/275帧完整解码无错，30FPS静音夹具，不冒充60源帧或采集音频。actual OBS/管理员新系统组件、其他GPU/实卡/长期直播本轮未重验，Claude前轮证据单独保留。
+
+archive-branches.py先tip映射/bundle verify/逐ref校验，再移除23干净E盘树与45已合分支引用，9脏树/4隔离/摄像机对照树保持；无强制删除、无远端或标签删除，依赖/用户配置/原包保持。bundle94032300字节、源路径减少2100030553字节（均非实际净磁盘回收）。收拢AGENTS/CURRENT_STATUS/DEVELOPMENT当前入口，全文归档历史；更新E盘根入口，补齐第三方修改清单。旧发行NVIDIA package-manifest从原ZIP原子恢复，qa.py防写穿硬链接；恢复脚本编码名错误与收尾注册核对夹具GUID/输出编码错误已纠正，未删系统模块，实际移除本任务x64/x86当前用户注册。所有失败证据/脚本/恢复清单在reports/archives同任务。
+
+当前源码main-claude-anr-20261113，build/tests/logs/reports/tmp统一codex-main-integration-20261118，独立启动tests同任务/启动main整合测试.cmd，保留原HDMI配置。详细结果docs/MAIN_INTEGRATION_2026-11-18.md及FINAL.json；不push、不新Release、不关机。本轮单Agent自审，不宣称独立Reviewer或全硬件验收。
+## 2026-11-16 Elgato 4K X：自动识别 HDR 信号源（Claude，未提交）
+
+用户 4K X + P010 时“自动”保持 SDR，需手动选 HDR·PQ。原因：4K X 不支持厂商属性集（720/721/722），驱动也不声明 PQ。实机核查（USB\VID_0FD9&PID_009B）：只有 UVC 视频与 UAC 音频接口，没有 HID 接口，因此 Elgato 官方 HID 协议不适用；厂商控制在 UVC 扩展单元 {961073C7-49F7-44F2-AB42-E940405940C2}（拓扑节点 3）。
+
+改动：`readElgato4kxHdrPacket`（`src/source/ElgatoHdrControl.cpp`）按 Nitlink f39b909（MIT）的邮箱协议读取信号源 HDR InfoFrame；`configure` 在非 MK.2、厂商属性读不到有效包时改走该路径，之后沿用原有 InfoFrame 校验与自动 PQ/HLG 逻辑。每次连接只查询一次；首个写入被拒即停止。手动选择、MK.2 与其它采集卡路径不变。
+
+验证：本机无项目依赖，未构建应用或 `veyra_capture_color_tests`。用 MSVC 14.50 /W4 单独编译 `ElgatoHdrControl.cpp`+`Log.cpp`+`ElgatoHdrCases.h`：34/34 通过（新增 4 项邮箱用例）。真实 4K X 上 `configure` 返回成功，应答 37 字节 A1/22、校验通过、内容全零（当时信号源为 SDR）→ 保持 SDR。**HDR 信号源下的真实应答未验证**，应用内整体流程未验证。未提交、未 push。
+
+补充（同日，HDR 信号源实测）：用户确认主机输出 HDR 后复测，真实应答为 `A1 22 00 00 87 01 1A 02 00…00 99`：InfoFrame 头后直接是载荷，**没有 InfoFrame 校验字节**（EOTF 在第 3 字节），原严格解析因此判无效、保持 SDR。修正：`readElgato4kxHdrPacket` 复制时补回校验字节恢复标准布局（完整性已由邮箱校验和覆盖）；测试夹具改为真实布局。重编后 34/34，/W4 无警告；真实 4K X：`InfoFrame valid=true eotf=2`，`configure` 得到 PQ、hdrPath=1。该信号源的静态元数据全零（peak/MaxCLL=0），元数据字段偏移与 HLG 未能实测。应用仍未构建，未提交。
+
+补充（同日，应用内实测，两处修正）：用户授权后在本机搭建最小构建（Qt 6.8.3、FFmpeg n9.0.1 头文件＋由已安装 2.1.9 DLL 生成的导入库、DLSS SDK 310.7、NVOF 头文件、nv-codec-headers n13.0.19.0；FSR/XeSS/AMF/串流/libass 未编入），产物在 D:\veyra-build，用已安装 2.1.9 的副本和独立 data-dir 运行。发现并修正：(1) `tests/unit/ElgatoHdrCases.h` 直接包含 `<ksproxy.h>` 抢在 `__STREAMS__` 设置之前，导致 `veyra_capture_color_tests` 中 IKsPin 未声明、无法编译；改为包含 `DirectShowCaptureSetup.h`。(2) 应用内自动识别到 PQ 后图形链报“Unsupported PQ/HLG colorimetry”：4K X（UVC）驱动无论信号源如何都显式声明 BT.709，自动路径原先保留驱动显式色域。现仅 MK.2 保留驱动显式矩阵/原色，其它 Elgato 卡在信号源为 HDR 时采用 BT.2020（与手动 HDR 一致），并新增对应用例。`veyra_capture_color_tests` failures=0；用户在真实 4K X + PS5 上确认“自动”已进入 HDR。NVIDIA 功能、MK.2 实卡、HLG、元数据偏移仍未验。
+
+### 2026-11-18 PR integration candidate
+
+All eight requested features are present in the isolated integration tree.
+Seven PR heads are retained as merge parents. PR #136 is imported as source
+only because its original history contains DLL/LIB dependencies; source-built
+libdovi is staged externally. Candidate is not yet accepted: full build and
+regressions are ongoing, with exact logs under
+`E:/项目/Veyra/logs/codex-pr-integration-20261118` and reports in the matching
+`reports` directory. Linux CI is being added to validate the separate OBS module.
+
+### 2026-11-18 八项社区 PR 完成兼容验证，准备更新 GitHub main
+
+用户授权 #140/#136/#133/#127/#115/#99/#96/#75 全部整合并做好兼容。隔离分支 codex/pr-integration-20261118；七个原 PR head 是合并祖先，#136 从 db5a4e5 纯源码采用，外部 libdovi 3.4.0 从 quietvoid/dovi_tool d1abe0e 自建，DLL/LIB 不进入新源码历史。完整说明见 PR_INTEGRATION_2026-11-18.md。
+
+本轮真实结果：Windows 产品构建；预设634/0、Quick220/0/0、RPU256/0、HTTP20/0、修复合同370/0、bridge音量16/0、音频DSP51/0、replay37/0、GPU摄像机523/debug0、截图/压缩软硬解/颜色合同/PS5加密回环均通过；4X->60/120实际消费者0重复0倒序，录制+回放+摄像机同时运行且监听静音仍录得AAC RMS约0.0882。Linux Ubuntu24 CI run44283832801构建/14 LUT输入/安装布局通过。命令与旧失败/修复均保留 E:/项目/Veyra/{reports,logs}/codex-pr-integration-20261118；ACCEPTANCE.json 明确最终结果替代来源。所有测试配置、音视频、SDK/生成头和运行库在E盘任务目录，不改用户配置、系统摄像机或正式ZIP。
+
+发现并修复：预设v16-21误读自动倍率字段、节点编辑器v17嵌套上限、重复旧显示面板/HDR观察失效、跨拖动seek抑制、MMR常量漏整数、GUI线程网络解析/过期结果、回环HTTP边界、韩语侧栏宽度、Linux透明度/LUT失败残留。初次测试stage缺Qt测试/offscreen组件已补齐，保留原失败；没有拿跳过当通过。B站真实账号写操作、实Elgato/Xbox/PS5、其他GPU、完整P7双层片库与Linux GPU视觉本轮未验，详见记录。
+
+当前 GitHub main 仍 bf596e1，八个原head未变化；#96已从draft转ready。下一步推送已测兼容提交，通过整合PR更新main，并核对原PR状态。未授权新Release或关机。
+
+
+### 2026-11-18 八项 PR 已更新 GitHub main
+
+GitHub #146 merge 成功：bd35431a6fe42ff4757fba4dec887e72a066e545，输入 head 5d9a2aee 已通过 Windows run44288445771、Linux runs44288361404/44288445800；七个原 PR (#140/#133/#127/#115/#99/#96/#75) 远端 merged=true。#136 的所有源功能已按纯源码导入，原 PR 已关闭为 adopted 并附 #146/合并提交/排除 DLL/LIB 历史原因，merged=false 的事实保留。
+
+本地 main-claude-anr-20261113 干净树已 ff-only 同步。摄像机传输32/64位各73项通过；临时HKCU注册仅指向本任务stage的两项已撤销，HKLM/用户配置/既有Release不改，QML测试探针撤下。收尾补 source-root cache guard，拒绝把隔离树的旧构建冒报为main；开发示例改用新的 main-app 输出目录。完整远端/源码/产物 SHA 与 CI 摘要存 reports/codex-pr-integration-20261118/FINAL.json。
+
+### 2026-11-18 main 合并后 CI 的依赖源超时
+
+main run44346915750 在 us-east-2.ec2.archive.ubuntu.com 的 HTTP 包下载阶段耗尽10分钟，被取消；配置、编译、测试未执行，不记录为通过。此前5d9a2aee的Windows和两次Linux CI成功保留。CI改用官方Ubuntu HTTPS端点、仅必要依赖和20秒网络超时/2次重试，保留原Ubuntu仓库和签名验证，不换第三方包。YAML、内嵌Python及镜像替换范围本地检查通过；实际重跑结果追加到外部FINAL.json。此次只改CI，不改已验播放器代码。
+
+补充：run44349210234 同样在依赖安装超时。完整日志确认runner用 file:/etc/apt/apt-mirrors.txt 的 mirror+file 间接源，上一条直连URL替换未覆盖，仍访问旧HTTP镜像。已适配 mirror+file、传统.list 与deb822.sources，并以5个源文件夹具执行实际内嵌CI代码，Ubuntu源/安全源/签名keyring/第三方源保留全部通过；本次失败仍保留不算通过。
+
+测试清理纠错：cleanup-qa.py调用复用write函数，曾经由硬链接误写本地正式NVIDIA目录的package-manifest.json；从已发布SHA256=4225ecb1…的原ZIP原子恢复清单fb19ef3c…，正式目录1695文件逐SHA全部一致，ZIP未变。当前QA清单已断链；本任务及前序main任务的cadence_app.py写JSON改为原子替换，并用真实硬链接夹具验证原文件不变。记录reports/codex-pr-integration-20261118/MANIFEST-REPAIR.json；旧错误内容保留作证据。
+
+最终结果：main run44351556868（b4015dd4）已成功，依赖安装、模块配置/编译、14项LUT输入与安装布局全部通过；mirror+file真实适配解决了旧源残留。与此前Windows/整合分支Linux结果分别保留，两次超时没有改写成通过。正式NVIDIA目录1695文件与原始发布ZIP清单逐项一致，ZIP SHA256仍4225ecb1…，测试清单误写已恢复并修正复用写入函数。至此八项PR功能、兼容修复、GitHub/local main同步、测试、依赖与清理记录完成；未发布新运行包、未改系统组件或关机。

@@ -123,8 +123,7 @@ VPage {
     // The NR layer card wraps the shared editor (NrLayerEditor.qml).
     // 显示同步 and 输出上限 (1.4.4 PresentationSettings), shared by the list 补帧
     // page and the node editor's output box (ProPage.PresentationRows).
-    component PresentationRows: ProPresentationRows {}
-    // A performance orb: a ring filled to `fraction` (green under 70 %, amber
+    component PresentationRows: ProPresentationRows {}    // A performance orb: a ring filled to `fraction` (green under 70 %, amber
     // under 100 %, red above), the value in the middle, the label under it.
     // Shared with the node page as ProPage.PerfOrb.
     component PerfOrb: ProPerfOrb {}
@@ -422,6 +421,22 @@ VPage {
                 }
             }
             RowLayout {
+                objectName: "pro-virtual-camera-control"
+                Layout.alignment: Qt.AlignVCenter
+                spacing: 6
+                Text {
+                    text: qsTr("虚拟摄像机")
+                    color: veyra.virtualCameraEnabled ? Theme.accent : Theme.t2
+                    font.family: Theme.fontUi
+                    font.pixelSize: Theme.fsBody
+                }
+                VSwitch {
+                    objectName: "pro-virtual-camera-toggle"
+                    checked: veyra.virtualCameraEnabled
+                    onToggled: enabled => veyra.setVirtualCameraEnabled(enabled)
+                }
+            }
+            RowLayout {
                 objectName: "pro-replay-control"
                 Layout.alignment: Qt.AlignVCenter
                 spacing: 6
@@ -503,7 +518,7 @@ VPage {
                 id: protectionDraw
                 objectName: "pro-protection-draw"
                 anchors.fill: parent
-                enabled: veyra.protectionDrawShape.length > 0
+                enabled: false // Main.qml owns mask input on every page and in fullscreen.
                 visible: enabled
                 cursorShape: Qt.CrossCursor
                 preventStealing: true
@@ -600,11 +615,21 @@ VPage {
                         height: 3
                         radius: 9
                         color: Qt.rgba(1, 1, 1, 0.14)
+                        // White; the sunset gradient along the rail in the dusk palette.
                         Rectangle {
                             width: parent.width * proSeekArea.frac
                             height: parent.height
                             radius: 9
                             color: "#FFFFFF"
+                            visible: !Theme.accentGradient
+                        }
+                        VAccentFill {
+                            width: parent.width * proSeekArea.frac
+                            height: parent.height
+                            radius: 9
+                            farEnd: true
+                            span: parent.width
+                            visible: Theme.accentGradient
                         }
                     }
                     // Press or drag anywhere on the rail: the picture follows the
@@ -621,7 +646,9 @@ VPage {
                     }
                     Timer {
                         id: proScrubSeek
-                        interval: 120
+                        // Restarted on every move, so it fires only once the drag settles
+                        // (see CineBar.qml for why overlapping seeks break playback).
+                        interval: 250
                         onTriggered: if (proSeekArea.scrubbing) veyra.seekTo(proSeekArea.scrubFrac * veyra.duration)
                     }
                     MouseArea {
@@ -632,11 +659,11 @@ VPage {
                         cursorShape: Qt.PointingHandCursor
                         preventStealing: true
                         function fracAt(x) { return Math.max(0, Math.min(1, x / Math.max(1, proSeekArea.width))) }
-                        onPressed: mouse => { proSeekArea.scrubFrac = fracAt(mouse.x); proSeekArea.scrubbing = true; proScrubSeek.start() }
+                        onPressed: mouse => { proSeekArea.scrubFrac = fracAt(mouse.x); proSeekArea.scrubbing = true }
                         onPositionChanged: mouse => {
                             if (!proSeekArea.scrubbing) return
                             proSeekArea.scrubFrac = fracAt(mouse.x)
-                            if (!proScrubSeek.running) proScrubSeek.start()
+                            proScrubSeek.restart()
                         }
                         onReleased: mouse => {
                             proScrubSeek.stop()
@@ -1133,7 +1160,7 @@ VPage {
         width: quickOrbRow.implicitWidth + 24
         height: quickOrbRow.implicitHeight + 16
         radius: 18
-        color: Qt.rgba(22 / 255, 22 / 255, 26 / 255, 0.94)
+        color: Theme.shade(22, 22, 26, 0.94)
         border.width: 1
         border.color: Theme.stroke2
         RowLayout {
@@ -1749,7 +1776,7 @@ VPage {
                             }
                             VRow {
                                 label: qsTr("倍率")
-                                // Live output hint: a suggestion, the multiplier stays as chosen.
+                                // 档位与作者原版一致（只有数字档）；自动选择由下方独立开关控制。
                                 hint: veyra.fgDisplayHint.length > 0 ? veyra.fgDisplayHint : veyra.fgMaxMultiplier + qsTr("X 为上限")
                                 hintColor: veyra.fgDisplayHint.length > 0 ? Theme.warn : Theme.t3
                                 VSeg {
@@ -1807,6 +1834,19 @@ VPage {
                                 VSwitch {
                                     checked: veyra.fgStrict
                                     onToggled: checked => veyra.fgStrict = checked
+                                }
+                            }
+                            VRow {
+                                objectName: "list-fg-auto-multiplier"
+                                label: qsTr("自动选择倍率")
+                                visible: veyra.fgAutoMultiplierAvailable
+                                hint: veyra.fgAutoMultiplierEnabled
+                                      ? qsTr("按源帧率和输出上限自动选档；源帧率超过上限时关闭补帧")
+                                      : qsTr("关闭时按手动选的倍率 · 默认关闭")
+                                hintBelow: veyra.fgAutoMultiplierEnabled
+                                VSwitch {
+                                    checked: veyra.fgAutoMultiplierEnabled
+                                    onToggled: checked => veyra.fgAutoMultiplierEnabled = checked
                                 }
                             }
                             VSubGroup {

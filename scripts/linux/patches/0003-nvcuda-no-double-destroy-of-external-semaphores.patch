@@ -1,0 +1,20 @@
+diff --git a/dlls/nvcuda/nvcuda.c b/dlls/nvcuda/nvcuda.c
+index 8598599..df47c81 100644
+--- a/dlls/nvcuda/nvcuda.c
++++ b/dlls/nvcuda/nvcuda.c
+@@ -4258,7 +4258,15 @@ CUresult WINAPI wine_cuWaitExternalSemaphoresAsync_ptsz(const CUexternalSemaphor
+ 
+ CUresult WINAPI wine_cuDestroyExternalSemaphore(CUexternalSemaphore extSem)
+ {
++    int i;
+     TRACE("(%p)\n", extSem);
++    /* Forget a semaphore the application destroys itself, so that
++     * semaphoreHandling() does not destroy it a second time when its slot is
++     * reused (use after free inside libcuda). */
++    pthread_mutex_lock(&semMutex);
++    for (i = 0; i < 4; i++)
++        if (semList[i] == extSem) semList[i] = NULL;
++    pthread_mutex_unlock(&semMutex);
+     return pcuDestroyExternalSemaphore(extSem);
+ }
+ 

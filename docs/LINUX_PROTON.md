@@ -43,14 +43,20 @@ has not been measured on Linux yet.
 
 ## Quick start
 
-Requirements: the proprietary NVIDIA driver, `curl`, `tar`, and `unzip` or
-`python3`. Nothing else has to be installed by hand.
+Requirements: the proprietary NVIDIA driver, `curl`, `tar`, `unzip` or
+`python3`, and for the default NVIDIA VFG mode `git` plus podman or docker
+(see "Running with NVIDIA VFG"). Nothing else has to be installed by hand.
 
 ```bash
 scripts/linux/veyra-proton.sh                    # open Veyra
 scripts/linux/veyra-proton.sh ~/Videos/clip.mp4  # open a file directly
 scripts/linux/veyra-proton.sh --setup            # only download and prepare
+VEYRA_VFG=0 scripts/linux/veyra-proton.sh        # plain GE-Proton, no NVIDIA VFG
 ```
+
+Since 2026-11-18 the launcher starts in NVIDIA VFG mode by default (patched
+Proton overlay, built on the first start). `VEYRA_VFG=0` uses plain
+GE-Proton instead.
 
 On first run the script downloads the pinned Veyra package and the pinned
 GE-Proton, verifies their checksums and unpacks them under
@@ -90,10 +96,35 @@ writes its own ICD files that point at the container's `libGLX_nvidia.so.0`.
 Set `VK_DRIVER_FILES` yourself to override. Running directly on the host
 needs none of this.
 
+### Settings and pairing
+
+Veyra keeps its data in two places: PS5, Xbox and Moonlight pairing in
+`%LOCALAPPDATA%\Veyra` inside the Wine prefix (`remoteplay/<id>.dat` plus
+`settings.ini`), and its own settings, presets and playlist in
+`runtime_local/` next to `veyra_qml_ui.exe`. With one prefix per mode and one
+app folder per version, PS5 had to be paired again after every version change
+and when switching between VFG and plain mode.
+
+The launcher therefore turns both into symlinks into `$VEYRA_HOME/user/`
+(`LocalAppData-Veyra`, `runtime_local`) on every start. Existing data is moved
+there the first time. If the shared folder already exists, a different local
+copy is renamed to `*.local-<date>` and kept. A new Veyra version without
+settings starts from a copy of the newest older version's `runtime_local`.
+Nothing is moved while Veyra is running.
+
+The PS5 profile is encrypted with `CryptProtectData`. Wine derives that key
+from the user name, which is `steamuser` in every Proton prefix, so the same
+file decrypts in both prefixes. Confirmed on the test machine on 2026-11-18:
+a profile paired in `prefix` was read in `prefix-vfg` (`profiles=1
+readFailures=0`). If it ever does not, the log shows
+`[remoteplay-ui] profiles=N readFailures=M` with M > 0, and pairing once more
+fixes it.
+
 ## NVIDIA VFG
 
 NVIDIA VFG shares D3D12 buffers and fences with CUDA. Under Proton this fails
-in two places, and both need a patched component:
+in two places that need a patched component, and the CUDA bridge has a third
+bug that crashes on repeated VFG starts:
 
 1. **CUDA bridge.** Stock Proton ships a stub `nvcuda.dll`, so `cuInit` is
    missing. GE-Proton and Proton-CachyOS ship the nvidia-libs bridge
@@ -117,6 +148,27 @@ in two places, and both need a patched component:
    gives shared committed buffers a dedicated exportable allocation registered
    with D3DKMT (2 files, 64 lines).
 
+3. **nvcuda double destroy (crash on the third VFG start).** nvcuda keeps the
+   last four imported external semaphores in a ring (`semaphoreHandling()`,
+   upstream commit `d612b0f` "Aggressively try to destroy used semaphores")
+   and destroys the oldest when the ring wraps, even if the application has
+   already destroyed it. Each VFG start imports two fences, and Veyra destroys
+   them when VFG is turned off. So the third VFG start in one Veyra session
+   (switching FG to NVIDIA VFG, away and back twice) destroyed a semaphore a
+   second time and libcuda crashed: `page fault on read access to
+   0x0000000000000048` in `libcuda.so.1`, called from
+   `cuDestroyExternalSemaphore` inside `wine_cuImportExternalSemaphore`
+   (seen 2026-11-18 on the test machine). The first two VFG starts worked
+   (60 generated frames per second, 120 fps output).
+   `scripts/linux/patches/0003-nvcuda-no-double-destroy-of-external-semaphores.patch`
+   removes a semaphore from the ring when the application destroys it.
+   The launcher rebuilds the overlay by itself when the patch set changes
+   (`patches=` line in `.veyra-vfg-complete`).
+   Verified 2026-11-18 on 2.1.9 with a PS5 Remote Play stream: four VFG
+   starts in one session without a crash, then about 6 minutes of
+   continuous VFG (21,488 of 21,489 generated frames valid). The rebuild
+   took about 8 minutes.
+
 ### Pinned versions
 
 All versions live in `scripts/linux/versions.sh`. The scripts download exactly
@@ -124,7 +176,7 @@ these and stop on a checksum or version mismatch:
 
 | Component | Pinned to | Enforced by |
 |---|---|---|
-| Veyra | 2.1.6 NVIDIA win64 portable | SHA-256 of the release zip |
+| Veyra | 2.1.9 NVIDIA win64 portable (measurements above were on 2.1.6) | SHA-256 of the release zip |
 | Proton | GE-Proton11-3 | SHA-512 of the release tarball |
 | nvcuda | SveSop/nvcuda `772b344a3594fca916999c5c5288d875332de482` (`v0.3-13-g772b344`) | full commit hash |
 | vkd3d-proton | HansKristian-Work/vkd3d-proton `3dfc6f07d0953b1e8b41705275c2c59cc7374fc5` (`vkd3d-1.1-5438-g3dfc6f07d`) | full commit hash |
@@ -142,27 +194,32 @@ byte-identical `nvcuda.dll.so`; `d3d12core.dll` and `d3d12.dll` differed only
 in the PE build timestamps. A different container image or compiler version
 could change the binaries further even though the sources are identical.
 
-Moving to a newer GE-Proton means updating `versions.sh`, rebasing both
+Moving to a newer GE-Proton means updating `versions.sh`, rebasing the
 patches onto the commits that build ships, and re-testing. The patches become
 unnecessary once vkd3d-proton supports shared committed buffers and Wine
 MR !12339 lands with an nvcuda release that uses it.
 
 ### Running with NVIDIA VFG
 
-```bash
-VEYRA_VFG=1 scripts/linux/veyra-proton.sh
-```
+This is the default mode; `VEYRA_VFG=0` turns it off.
 
 The first start builds the overlay (`build-vfg-proton.sh`, needs `git` and
 podman or docker): it builds both patched components in a throw-away Fedora
 container and installs them into a copy of the pinned GE-Proton at
 `$VEYRA_HOME/proton/GE-Proton11-3-veyra-vfg`. Later starts reuse it. This mode
 has its own prefix (`$VEYRA_HOME/prefix-vfg`), because Proton does not replace
-`d3d12core.dll` in an existing prefix; PS5 pairing is stored per prefix.
+`d3d12core.dll` in an existing prefix. User data is shared between the two
+modes, see "Settings and pairing".
 
 In Veyra choose "Frame Gen" → NVIDIA VFG → 2X.
 
 Behind a proxy, pass container options through `VEYRA_VFG_RUN_ARGS`.
+Inside a distrobox or toolbox without its own podman or docker, the build
+script uses the host's engine through `distrobox-host-exec` or `host-spawn`.
+`CONTAINER_ENGINE` may name the engine directly, also as several words
+(`CONTAINER_ENGINE="host-spawn docker"`). On the test machine (Ubuntu 24.04
+distrobox on Fedora, docker on the host through `host-spawn`) the overlay
+build of 2.1.9 took about 6 minutes.
 
 The scripts were run from nothing on the test machine (inside a distrobox,
 docker on the host): setup took 66 s, the overlay build 162 s. NVIDIA VFG 2X
@@ -193,5 +250,79 @@ upstream:
   succeeds.
 - **dxvk-nvapi.** `NvAPI_Disp_GetVRRInfo` and
   `NvAPI_DISP_GetMonitorCapabilities` are not implemented.
+- **PS5 stream settings from Settings are ignored** (not Linux-specific, also
+  in upstream 2.1.9). Quality, codec and bitrate chosen in Settings → PS5 only
+  change an in-memory form; opening the PS5 dialog or resuming the last source
+  reloads the form from the pairing file, and only "Connect" writes it back.
+  Every connect on 2026-11-18 therefore used 1080p60 H.264 15 Mbit/s.
+  Workaround with the release build: change them in the PS5 connection dialog
+  itself, then press Connect; they are kept from then on. Fixed in source on
+  this branch (`ps5Set` in `src/ui/bridge/RemotePlay.cpp` writes them to the
+  selected pairing at once), not yet in any build.
 - **Frame generation cannot be enabled from the command line** in
   `veyra_qml_ui.exe`; the `--fg*` switches exist only in the legacy shell.
+
+## Upstream sync 2026-11-18
+
+Upstream `Likely7/Veyra-NRVideo` main was merged at `33dfdf71` (fork point
+was `c327d45`, 2026-11-15). The merge was clean: upstream did not touch
+`scripts/linux/` or this page, and none of our files exist upstream.
+
+What this means for the Linux path:
+
+- **The launcher now pins Veyra 2.1.9** (was 2.1.6). The SHA-256
+  `4225ecb1…5c79f362` (731,012,476 bytes) is taken from upstream's release
+  record `docs/RELEASE_2.1.9_EXECUTION_2026-11-15.md`; the 2.1.6 hash in the
+  matching 2.1.6 record equals the one we measured by downloading, so the
+  record is trusted. The zip itself could not be downloaded from the cloud
+  session (GitHub releases blocked by the network allowlist), so its layout is
+  unchecked; `ensure_veyra_app` finds `veyra_qml_ui.exe` up to three levels
+  deep and stops with an error otherwise. 2.1.9 unpacks next to 2.1.6 under
+  `$VEYRA_HOME/app/` and uses the same prefixes, so settings and PS5 pairing
+  carry over. To go back, set `VEYRA_VERSION` and `VEYRA_PKG_SHA256` to the
+  2.1.6 values (git history) or point `VEYRA_APP` at the old folder.
+- **2.1.9 first start, 2026-11-18, test machine** (GE-Proton11-3, stock
+  path): `--setup` downloaded the zip, the SHA-256 matched and
+  `veyra_qml_ui.exe` was found. Veyra started: RTX 3060 Ti detected, D3D12
+  through vkd3d-proton (no llvmpipe), intro played, UI about 62 fps, update
+  check "current". Same known warnings as 2.1.6 (Qt TLS ciphers, GPU engine
+  counters, GPU priority). New in 2.1.9: `[startup-music] engine error 4
+  hr=0x80004003`, the startup music does not play under Proton (E_POINTER;
+  cause not investigated). Proton `err:` lines were only OpenXR and winebth,
+  both harmless.
+  Frame generation "does not turn on" on a fresh 2.1.9 profile: the default
+  FG motion source is Automatic, which for DLSS-G (backend 0) and FSR
+  (backend 2) means NVIDIA optical flow. dxvk-nvapi 0.9.2's `nvofapi64`
+  creates the session but answers the `WIDTH_MIN` capability query with
+  status 11, Veyra fails closed (`[nvof-session] scalar cap WIDTH_MIN query
+  failed st=11`, `[graph] NVOF init failed`) and rolls FG back to off without
+  a visible error. Fix: set the frame generation motion source to "Zero
+  motion" and use FSR 3.1 · 2X. NVIDIA VFG in the same run failed with
+  `[vfg] missing API cuInit` because the launcher was started without
+  `VEYRA_VFG=1`, as expected.
+  Later the same day on 2.1.9: PS5 Remote Play (1080p60 H.264), FSR 3.1 FG
+  and NVIDIA VFG 2X (`VEYRA_VFG=1`, 60 → 120 fps) worked. Still to check
+  on 2.1.9: RTX Video SR. Until then the "What works" table
+  describes 2.1.6.
+- **NVIDIA VFG patches still apply to the same code.** `src/pipeline/VfgBackend.cpp`
+  is unchanged upstream, so the shared committed buffer + CUDA import path the
+  two patches fix is the same.
+- **Upstream now has its own, unrelated Linux part:** a native OBS filter in
+  `linux/obs/` (3D LUT, exposure/contrast/saturation, FXAA, sharpen; no NGX,
+  no VFG), see [OBS_FILTER.md](OBS_FILTER.md). On non-Windows the top-level
+  `CMakeLists.txt` now builds only that module and stops. It is not a Linux
+  port of the player and does not replace the Proton path. Built here with
+  `libobs-dev` 30.0.2 on Ubuntu 24.04: module and parser test pass.
+  Note: the test is registered in `linux/obs`, so `ctest --test-dir out/obs`
+  (as in `.github/workflows/obs-filter-checks.yml`) finds no tests and exits
+  successfully; `ctest --test-dir out/obs/linux/obs` runs it.
+- **New upstream features not checked under Proton** (in upstream main, some only after
+  the 2.1.9 release; none tried under Proton yet): DirectShow virtual camera
+  (`virtualcam/`, registered by `veyra-camera-setup.exe`), Bilibili page,
+  Dolby Vision profile 5/7, startup music and intro, AMD AMF frame rate
+  conversion (AMD only), the optional software decode switch for Xbox, and the
+  NVIDIA VRR profile row (writes NvAPI driver profiles through
+  `nvapi64.dll`; under Proton that is dxvk-nvapi, where driver profiles are
+  stubbed at best, so expect it not to work).
+- Two new upstream workflows now also run in this fork: `obs-filter-checks.yml`
+  (Ubuntu) and `vrr-profile-checks.yml` (Windows runner).

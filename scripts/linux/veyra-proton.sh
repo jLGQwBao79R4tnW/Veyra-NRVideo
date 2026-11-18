@@ -12,9 +12,10 @@
 # versions.
 #
 # Environment:
-#   VEYRA_VFG=1    use the Proton overlay with patched nvcuda and vkd3d-proton,
-#                  needed for NVIDIA VFG; it is built on first use
-#                  (build-vfg-proton.sh, needs podman or docker)
+#   VEYRA_VFG=0    use plain GE-Proton. The default (1) is the Proton overlay
+#                  with patched nvcuda and vkd3d-proton that NVIDIA VFG needs;
+#                  it is built on first use (build-vfg-proton.sh, needs git and
+#                  podman or docker)
 #   VEYRA_LOG=1    write a Proton log to $VEYRA_HOME/logs
 #   VEYRA_HOME     where everything lives (default ~/.local/share/veyra-proton)
 #   VEYRA_NGX_DIR  folder with the driver's nvngx.dll, if not found automatically
@@ -32,7 +33,7 @@ here="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 
 setup_only=0
 if [ "${1:-}" = "--setup" ]; then setup_only=1; shift; fi
-vfg="${VEYRA_VFG:-0}"
+vfg="${VEYRA_VFG:-1}"
 
 if [ -n "${VEYRA_APP:-}" ]; then
   app="$VEYRA_APP"
@@ -46,7 +47,10 @@ if [ -n "${VEYRA_PROTON:-}" ]; then
   proton="$VEYRA_PROTON"
   [ -f "$proton" ] || die "Proton not found at VEYRA_PROTON=$proton"
 elif [ "$vfg" = 1 ]; then
-  [ -f "$VEYRA_VFG_PROTON_DIR/.veyra-vfg-complete" ] || "$here/build-vfg-proton.sh"
+  if ! grep -qx "patches=$(vfg_patches_id)" "$VEYRA_VFG_PROTON_DIR/.veyra-vfg-complete" 2>/dev/null; then
+    [ -f "$VEYRA_VFG_PROTON_DIR/.veyra-vfg-complete" ] && say "VFG patches changed, rebuilding the overlay"
+    "$here/build-vfg-proton.sh" || die "building the VFG overlay failed; VEYRA_VFG=0 starts Veyra without NVIDIA VFG"
+  fi
   proton="$VEYRA_VFG_PROTON_DIR/proton"
 else
   ensure_ge_proton
@@ -117,6 +121,50 @@ if [ ! -d "$prefix/pfx/drive_c/windows/system32" ]; then
   "$proton" run wineboot -u >/dev/null 2>&1 || true
 fi
 copy_ngx
+
+# Keep user data in one place, outside the prefixes and the versioned app
+# folder, so that it survives a version change and is the same with and
+# without VEYRA_VFG:
+#   <prefix>/.../AppData/Local/Veyra  PS5/Xbox/Moonlight pairing (remoteplay/)
+#   <app>/runtime_local               Veyra settings, presets, playlist
+# Each location becomes a symlink into $VEYRA_HOME/user. Existing data is moved
+# there the first time; a second, different copy is set aside, never deleted.
+# The PS5 profile is DPAPI-encrypted, which in Wine is keyed by the user name
+# ("steamuser" in every Proton prefix), so it reads back in either prefix.
+share_dir() {
+  local here_dir="$1" shared="$2" seed
+  [ -L "$here_dir" ] && return 0
+  # Match the process name (Wine sets it to the exe name, cut to 15 characters),
+  # not the command line, so a grep or tail mentioning the exe does not count.
+  if pgrep -x 'veyra_qml_ui\.exe?' >/dev/null 2>&1; then
+    say "Veyra is running; close it and start again to move $(basename "$here_dir") to $shared"
+    return 0
+  fi
+  mkdir -p "$(dirname "$shared")" "$(dirname "$here_dir")"
+  if [ -d "$here_dir" ]; then
+    if [ ! -e "$shared" ]; then
+      mv "$here_dir" "$shared"
+    else
+      mv "$here_dir" "$here_dir.local-$(date +%Y%m%d-%H%M%S)"
+      say "kept the previous $(basename "$here_dir") of this folder next to it; using $shared"
+    fi
+  elif [ ! -e "$shared" ] && [ "$#" -gt 2 ]; then
+    # First run of a new Veyra version: start from the newest older one.
+    # shellcheck disable=SC2012  # our own folder names, no newlines
+    seed="$(ls -dt "${@:3}" 2>/dev/null | head -n1 || true)"
+    if [ -n "$seed" ]; then cp -a "$seed" "$shared"; say "copied settings from $seed"; fi
+  fi
+  mkdir -p "$shared"
+  ln -s "$shared" "$here_dir"
+}
+share_dir "$prefix/pfx/drive_c/users/steamuser/AppData/Local/Veyra" "$VEYRA_HOME/user/LocalAppData-Veyra"
+if [ -z "${VEYRA_APP:-}" ]; then
+  older=()
+  for d in "$VEYRA_HOME"/app/*/runtime_local; do
+    [ -d "$d" ] && [ ! -L "$d" ] && older+=("$d")
+  done
+  share_dir "$app/runtime_local" "$VEYRA_HOME/user/runtime_local" "${older[@]}"
+fi
 
 if [ "$setup_only" = 1 ]; then
   say "ready: app=$app proton=$proton prefix=$prefix"
