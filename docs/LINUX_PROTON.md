@@ -215,10 +215,18 @@ What this means for the Linux path:
   `$VEYRA_HOME/app/` and uses the same prefixes, so settings and PS5 pairing
   carry over. To go back, set `VEYRA_VERSION` and `VEYRA_PKG_SHA256` to the
   2.1.6 values (git history) or point `VEYRA_APP` at the old folder.
-- **Not yet re-tested on 2.1.9.** To be checked on the test machine:
-  `--setup` downloads and unpacks; UI starts; RTX Video SR; FSR 3.1 FG 2X;
-  PS5 Remote Play session; `VEYRA_VFG=1` with NVIDIA VFG 2X. Until then the
-  "What works" table describes 2.1.6.
+- **2.1.9 first start, 2026-11-18, test machine** (GE-Proton11-3, stock
+  path): `--setup` downloaded the zip, the SHA-256 matched and
+  `veyra_qml_ui.exe` was found. Veyra started: RTX 3060 Ti detected, D3D12
+  through vkd3d-proton (no llvmpipe), intro played, UI about 62 fps, update
+  check "current". Same known warnings as 2.1.6 (Qt TLS ciphers, GPU engine
+  counters, GPU priority). New in 2.1.9: `[startup-music] engine error 4
+  hr=0x80004003`, the startup music does not play under Proton (E_POINTER;
+  cause not investigated). Proton `err:` lines were only OpenXR and winebth,
+  both harmless.
+  Still to check on 2.1.9: RTX Video SR, FSR 3.1 FG 2X, PS5 Remote Play,
+  `VEYRA_VFG=1` with NVIDIA VFG 2X. Until then the "What works" table
+  describes 2.1.6.
 - **NVIDIA VFG patches still apply to the same code.** `src/pipeline/VfgBackend.cpp`
   is unchanged upstream, so the shared committed buffer + CUDA import path the
   two patches fix is the same.
