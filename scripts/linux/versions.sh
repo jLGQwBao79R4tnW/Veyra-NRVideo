@@ -3,10 +3,10 @@
 # so two installs cannot end up with different component versions.
 # Changing anything here means re-testing; see docs/LINUX_PROTON.md.
 
-VEYRA_VERSION=2.1.6
+VEYRA_VERSION=2.1.9
 VEYRA_PKG="Veyra-${VEYRA_VERSION}-NVIDIA-win64-portable"
 VEYRA_PKG_URL="https://github.com/Likely7/Veyra-NRVideo/releases/download/v${VEYRA_VERSION}/${VEYRA_PKG}.zip"
-VEYRA_PKG_SHA256=c55fbb2eb7395f29c997d0f744928f645f991729ff722f95f1d90394f80d0968
+VEYRA_PKG_SHA256=4225ecb11a8e96c2826b4b0b798feb811d7ae237f3edf0b627f3b6895c79f362
 
 GE_PROTON=GE-Proton11-3
 GE_PROTON_URL="https://github.com/GloriousEggroll/proton-ge-custom/releases/download/${GE_PROTON}/${GE_PROTON}.tar.gz"

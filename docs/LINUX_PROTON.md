@@ -124,7 +124,7 @@ these and stop on a checksum or version mismatch:
 
 | Component | Pinned to | Enforced by |
 |---|---|---|
-| Veyra | 2.1.6 NVIDIA win64 portable | SHA-256 of the release zip |
+| Veyra | 2.1.9 NVIDIA win64 portable (measurements above were on 2.1.6) | SHA-256 of the release zip |
 | Proton | GE-Proton11-3 | SHA-512 of the release tarball |
 | nvcuda | SveSop/nvcuda `772b344a3594fca916999c5c5288d875332de482` (`v0.3-13-g772b344`) | full commit hash |
 | vkd3d-proton | HansKristian-Work/vkd3d-proton `3dfc6f07d0953b1e8b41705275c2c59cc7374fc5` (`vkd3d-1.1-5438-g3dfc6f07d`) | full commit hash |
@@ -204,12 +204,21 @@ was `c327d45`, 2026-11-15). The merge was clean: upstream did not touch
 
 What this means for the Linux path:
 
-- **The launcher still runs Veyra 2.1.6.** `veyra-proton.sh` downloads the
-  pinned release package, not this source tree, so the merge changes nothing
-  that runs on Linux. Upstream has since released 2.1.9 (same package name
-  pattern, `Veyra-2.1.9-NVIDIA-win64-portable.zip`). Moving the pin means
-  updating `VEYRA_VERSION` and `VEYRA_PKG_SHA256` in `versions.sh` and
-  re-running the checks in "What works" on the test machine; not done yet.
+- **The launcher now pins Veyra 2.1.9** (was 2.1.6). The SHA-256
+  `4225ecb1…5c79f362` (731,012,476 bytes) is taken from upstream's release
+  record `docs/RELEASE_2.1.9_EXECUTION_2026-11-15.md`; the 2.1.6 hash in the
+  matching 2.1.6 record equals the one we measured by downloading, so the
+  record is trusted. The zip itself could not be downloaded from the cloud
+  session (GitHub releases blocked by the network allowlist), so its layout is
+  unchecked; `ensure_veyra_app` finds `veyra_qml_ui.exe` up to three levels
+  deep and stops with an error otherwise. 2.1.9 unpacks next to 2.1.6 under
+  `$VEYRA_HOME/app/` and uses the same prefixes, so settings and PS5 pairing
+  carry over. To go back, set `VEYRA_VERSION` and `VEYRA_PKG_SHA256` to the
+  2.1.6 values (git history) or point `VEYRA_APP` at the old folder.
+- **Not yet re-tested on 2.1.9.** To be checked on the test machine:
+  `--setup` downloads and unpacks; UI starts; RTX Video SR; FSR 3.1 FG 2X;
+  PS5 Remote Play session; `VEYRA_VFG=1` with NVIDIA VFG 2X. Until then the
+  "What works" table describes 2.1.6.
 - **NVIDIA VFG patches still apply to the same code.** `src/pipeline/VfgBackend.cpp`
   is unchanged upstream, so the shared committed buffer + CUDA import path the
   two patches fix is the same.
@@ -222,8 +231,8 @@ What this means for the Linux path:
   Note: the test is registered in `linux/obs`, so `ctest --test-dir out/obs`
   (as in `.github/workflows/obs-filter-checks.yml`) finds no tests and exits
   successfully; `ctest --test-dir out/obs/linux/obs` runs it.
-- **New upstream features not checked under Proton** (only relevant once the
-  pin moves past 2.1.6 or a self-built exe is used): DirectShow virtual camera
+- **New upstream features not checked under Proton** (in upstream main, some only after
+  the 2.1.9 release; none tried under Proton yet): DirectShow virtual camera
   (`virtualcam/`, registered by `veyra-camera-setup.exe`), Bilibili page,
   Dolby Vision profile 5/7, startup music and intro, AMD AMF frame rate
   conversion (AMD only), the optional software decode switch for Xbox, and the
