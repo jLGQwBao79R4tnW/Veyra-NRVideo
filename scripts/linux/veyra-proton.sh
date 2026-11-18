@@ -130,7 +130,9 @@ copy_ngx
 share_dir() {
   local here_dir="$1" shared="$2" seed
   [ -L "$here_dir" ] && return 0
-  if pgrep -f 'veyra_qml_ui\.exe' >/dev/null 2>&1; then
+  # Match the process name (Wine sets it to the exe name, cut to 15 characters),
+  # not the command line, so a grep or tail mentioning the exe does not count.
+  if pgrep -x 'veyra_qml_ui\.exe?' >/dev/null 2>&1; then
     say "Veyra is running; close it and start again to move $(basename "$here_dir") to $shared"
     return 0
   fi
